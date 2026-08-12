@@ -29,3 +29,7 @@ Thumbs.db
 # Scratch
 *.log
 *.tmp
+
+# Generated pages — regenerated from the database on every scan,
+# and they carry one person's board.
+published/

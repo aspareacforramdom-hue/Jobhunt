@@ -37,7 +37,7 @@ import yaml
 
 from core import (calibrate as calib, db, discover, feedback,
                   filter as flt, intake, legacy, notify, prefilter,
-                  score, session, tailor)
+                  publish, score, session, tailor)
 
 
 def cmd_intake(args):
@@ -176,6 +176,48 @@ def cmd_serve(args):
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
+def cmd_publish(args):
+    """
+    Write each user's board to a standalone HTML file.
+
+    The files are self-contained, so they can be hosted anywhere — or
+    read straight off disk. Nothing is uploaded from here; publishing
+    where other people can see it stays a deliberate, separate act.
+    """
+    out_dir = args[args.index("--out") + 1] if "--out" in args else "published"
+    os.makedirs(out_dir, exist_ok=True)
+
+    conn = db.connect()
+    try:
+        written = []
+        for user in db.all_users(conn):
+            name = user["username"]
+            profile = db.load_profile(conn, user["id"])
+            if not profile:
+                print(f"  skipped {name}: no profile yet")
+                continue
+
+            page = publish.build_for_user(
+                conn, user["id"], name.title(),
+                note=("Scores on this page are placeholder — the pipeline "
+                      "has not been run against a live model yet.")
+                if "--placeholder" in args else None)
+
+            path = os.path.join(out_dir, f"{name}.html")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(page)
+            written.append((name, path, len(page)))
+    finally:
+        conn.close()
+
+    print()
+    for name, path, size in written:
+        print(f"  {name:<10} {path}  ({size / 1024:.0f} KB)")
+    if written:
+        print("\nSelf-contained — no logins, no server, no external requests.")
+    return written
+
+
 def cmd_migrate(args):
     """Import data/*.json into the database for one named user."""
     if "--user" not in args:
@@ -217,6 +259,7 @@ COMMANDS = {
     "log": cmd_log,
     "review": cmd_review,
     "seed-users": cmd_seed_users,
+    "publish": cmd_publish,
     "migrate": cmd_migrate,
     "serve": cmd_serve,
 }
