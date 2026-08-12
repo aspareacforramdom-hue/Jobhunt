@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Applications · Career Loop{% endblock %}
+
+{% block content %}
+<div class="doc">
+  <div class="pagehead">
+    <h1>Applications</h1>
+    <span class="label">{{ applications|length }} prepared</span>
+  </div>
+
+  <p class="note prose" style="margin-bottom: 1.5rem">
+    Logging what came back is what lets the scorer learn. A search that
+    never asks "did that work?" repeats the same mistake weekly.</p>
+
+  {% if applications %}
+    {% for a in applications %}
+      <div class="row">
+        <span class="figure figure--sm" style="min-width: 2.5ch">
+          {{ "%.1f"|format(a.score or 0) }}</span>
+
+        <div class="row__body">
+          <a href="/applications/{{ a.job_id }}" class="entry__title">
+            {{ a.title }}</a>
+          <p class="entry__meta">
+            <span>{{ a.company }}</span>
+            {% if a.location %}<span class="muted2">· {{ a.location }}</span>{% endif %}
+          </p>
+          <p class="note mt-1">
+            prepared {{ a.prepared_at|ago }}
+            {% if a.outcome %} · outcome {{ a.outcome }}{% endif %}
+            {% if a.outcome_note %} — {{ a.outcome_note }}{% endif %}
+          </p>
+        </div>
+
+        <form method="post" action="/jobs/{{ a.job_id }}/status"
+              class="row__end inline" style="gap: .35rem">
+          <input type="hidden" name="back" value="/applications">
+          <select name="status">
+            {% for s in statuses %}
+              {% if s not in ('new', 'ignored') %}
+                <option value="{{ s }}" {% if a.status == s %}selected{% endif %}>
+                  {{ s }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+          <button class="btn btn--sm">Log</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="empty">
+      Nothing prepared yet. Open a role from
+      <a href="/" class="linklike">the board</a> and hit
+      “Prepare application”.</p>
+  {% endif %}
+</div>
+{% endblock %}

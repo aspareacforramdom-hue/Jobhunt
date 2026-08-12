@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Board · Career Loop{% endblock %}
+
+{% block content %}
+<div class="pagehead">
+  <h1>Board</h1>
+  <p class="label">
+    {% if profile and profile.target and profile.target.role_family %}
+      toward — {{ profile.target.role_family }}
+    {% else %}
+      no target set
+    {% endif %}
+  </p>
+  <div class="pagehead__end inline">
+    {% if not (profile and profile.weights) %}
+      <a href="/intake" class="linklike">Run intake →</a>
+    {% endif %}
+    <a href="/ignored" class="linklike">{{ ignored_count }} ignored →</a>
+  </div>
+</div>
+
+{{ m.distribution(board.distribution, board.floor) }}
+
+<div class="board">
+  {% for col in board.columns %}
+    <section class="column">
+      <div class="column__head">
+        <h2 style="font-size: .875rem">{{ col.label }}</h2>
+        <span class="column__count">
+          {%- if col.key == 'new' and col.total > col.shown -%}
+            {{ col.shown }}/{{ col.total }}
+          {%- else -%}
+            {{ col.shown }}
+          {%- endif -%}
+        </span>
+      </div>
+
+      {% for job in col.jobs %}
+        {{ m.entry(job, back="/", delay=loop.index0 * 45) }}
+      {% else %}
+        <p class="empty">
+          {% if col.key == 'new' %}
+            Nothing new. Scan, or browse <a href="/jobs" class="linklike">all jobs</a>.
+          {% else %}
+            Nothing here yet.
+          {% endif %}
+        </p>
+      {% endfor %}
+
+      {% if col.key == 'new' and col.total > col.shown %}
+        <p class="mt-1">
+          <a href="/jobs" class="linklike">
+            {{ col.total - col.shown }} more above the floor →</a></p>
+      {% endif %}
+    </section>
+  {% endfor %}
+</div>
+{% endblock %}

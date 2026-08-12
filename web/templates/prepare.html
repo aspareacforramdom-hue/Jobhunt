@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Prepare · {{ job.title }}{% endblock %}
+
+{% block content %}
+{# One screen, three copy buttons, nothing downloads. No DOCX or PDF in
+   v1 — slow to build, slow to run, and it gets hand-edited anyway. #}
+{% set t = application.tailored or {} %}
+{% set o = application.outreach or {} %}
+{% set note = t.linkedin_note or o.message %}
+
+<div class="doc">
+  <a href="/jobs/{{ job.id }}" class="linklike">← Back to the listing</a>
+
+  <header class="doc__head mt-2">
+    <div style="min-width: 0">
+      <p class="label">Prepare</p>
+      <h1 class="doc__title mt-1">{{ job.title }}</h1>
+      <p class="mt-1" style="color: var(--ink-2)">
+        {{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}
+      </p>
+    </div>
+  </header>
+
+  {% if t.headline %}
+    <section class="band">
+      <div class="band__head"><h2>CV headline</h2></div>
+      <p class="pull prose">{{ t.headline }}</p>
+    </section>
+  {% endif %}
+
+  <!-- 1 · Cover letter -->
+  <section class="band">
+    <div class="band__head">
+      <span class="label">01</span>
+      <h2>Cover letter</h2>
+      <span class="counter">{{ (t.cover_letter or '').split()|length }} / 150 words</span>
+      <button class="btn btn--sm push" data-copy="cover">Copy</button>
+    </div>
+    <pre id="cover" class="copyblock">{{ t.cover_letter or 'Not generated.' }}</pre>
+    {% if t.stretch_line %}
+      <p class="note mt-2">
+        Addresses the gap head-on rather than hiding it:
+        “{{ t.stretch_line }}”</p>
+    {% endif %}
+  </section>
+
+  <!-- 2 · CV bullet swaps -->
+  <section class="band">
+    <div class="band__head">
+      <span class="label">02</span>
+      <h2>CV bullet swaps</h2>
+    </div>
+    <p class="note prose" style="margin-bottom: 1rem">
+      Copy each one individually. Nothing here invents experience — these
+      reword what is already on your CV for this specific role.</p>
+
+    {% set swaps = t.bullet_swaps or [] %}
+    {% if swaps %}
+      {% for s in swaps %}
+        <div class="swap">
+          <p class="swap__from">
+            Replace — {{ s.replace or 'an existing bullet' }}</p>
+          <div class="swap__row">
+            <p id="swap{{ loop.index }}" style="flex: 1; font-size: .9375rem;
+                                                line-height: 1.55">{{ s.with }}</p>
+            <button class="btn btn--sm" data-copy="swap{{ loop.index }}">Copy</button>
+          </div>
+        </div>
+      {% endfor %}
+    {% elif t.reordered_bullets %}
+      {# Applications prepared before bullet_swaps existed. #}
+      {% for b in t.reordered_bullets %}
+        <div class="swap">
+          <div class="swap__row">
+            <p id="swap{{ loop.index }}" style="flex: 1; font-size: .9375rem">{{ b }}</p>
+            <button class="btn btn--sm" data-copy="swap{{ loop.index }}">Copy</button>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted">No bullet swaps were generated.</p>
+    {% endif %}
+
+    {% if t.keywords_to_add %}
+      <p class="note mt-2">
+        ATS terms from the JD you genuinely have —
+        {{ t.keywords_to_add|join(' · ') }}</p>
+    {% endif %}
+  </section>
+
+  <!-- 3 · LinkedIn note -->
+  <section class="band">
+    <div class="band__head">
+      <span class="label">03</span>
+      <h2>LinkedIn note</h2>
+      <span class="counter" data-over="{{ 1 if (note or '')|length > 300 else 0 }}">
+        {{ (note or '')|length }} / 300 characters</span>
+      {% if note %}
+        <button class="btn btn--sm push" data-copy="note">Copy</button>
+      {% endif %}
+    </div>
+    <p id="note" class="copyblock">{{ note or 'Not generated.' }}</p>
+  </section>
+
+  <!-- Outreach: best-effort, never blocks the page -->
+  <section class="band">
+    <div class="band__head">
+      <h2>Who to send it to</h2>
+      <span class="label push">best effort</span>
+    </div>
+    {% if o.likely_contacts %}
+      <div class="stack stack-2">
+        {% for c in o.likely_contacts %}
+          <div>
+            <p style="font-size: .9375rem">
+              <strong style="font-weight: 500">{{ c.name }}</strong>
+              <span class="muted">— {{ c.title }}</span></p>
+            <p class="note">{{ c.why_them }}
+              {% if c.source %}
+                · <a href="{{ c.source }}" target="_blank" rel="noopener"
+                     class="linklike">source ↗</a>
+              {% endif %}</p>
+          </div>
+        {% endfor %}
+      </div>
+      {% if o.confidence %}
+        <p class="note mt-2">
+          Confidence {{ o.confidence }}. Verify before you send.</p>
+      {% endif %}
+    {% else %}
+      <p class="prose muted">
+        No contact found. This step does a web search that fails often,
+        so it is wrapped — the three blocks above never depend on it.</p>
+    {% endif %}
+  </section>
+
+  <section class="band" style="border-bottom: 0">
+    <div class="actionbar">
+      <form method="post" action="/jobs/{{ job.id }}/status">
+        <input type="hidden" name="status" value="applied">
+        <input type="hidden" name="back" value="/applications">
+        <button class="btn btn--solid">I've applied</button>
+      </form>
+      <a href="{{ job.url }}" target="_blank" rel="noopener" class="btn">
+        Open the listing ↗</a>
+      <p class="note" style="margin-left: .5rem">
+        Nothing is submitted for you. Copy, edit, send it yourself.</p>
+    </div>
+  </section>
+</div>
+{% endblock %}

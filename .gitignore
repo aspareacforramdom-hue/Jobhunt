@@ -1,0 +1,31 @@
+# Everything under data/ is either personal or regenerable: the SQLite
+# database holds three people's job searches and compiled profiles, and
+# .session_key signs their login cookies. None of it belongs in history.
+data/*
+!data/.gitkeep
+
+# Secrets. The app reads keys from the environment, never from a file —
+# these patterns exist so an accidental one never gets committed.
+.env
+.env.*
+*.key
+*.pem
+secrets.*
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Scratch
+*.log
+*.tmp

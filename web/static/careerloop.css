@@ -1,0 +1,665 @@
+/* ============================================================
+   CAREER LOOP — the house style
+
+   An editorial instrument. This is a reference document about
+   someone's future, so it is set like one: warm paper, hairline
+   rules, a serif you read slowly, and mono for anything countable.
+
+   The design brief was "clarity, not persuasion". That is a mandate
+   for craft, not for plainness — so there are no gradients, no glow,
+   no colour-coded score badges and no PERFECT MATCH banners, but
+   every rule, measure and numeral is deliberate. The accent colour
+   appears perhaps six times per page. The data does the arguing.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* Paper, warmed. Pure white is a screen; this is a page. */
+  --paper:        #faf8f3;
+  --paper-sunk:   #f3efe6;
+  --paper-raised: #fffdf9;
+
+  /* Ink, warmed to match. Never #000. */
+  --ink:    #1a1613;
+  --ink-2:  #4b433a;
+  --ink-3:  #857b6d;
+  --ink-4:  #a9a093;
+
+  --rule:        #e2dacb;
+  --rule-strong: #c9bfaa;
+
+  /* One accent. Oxidised rust — editorial, not alarming. */
+  --accent:      #9c3b23;
+  --accent-wash: #f2e5df;
+
+  --font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --font-prose:   'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-ui:      'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --measure: 34rem;      /* prose line length, ~70 characters */
+  --gutter: 2rem;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-prose);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Paper grain. Barely there — it stops large fills reading as plastic. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: .028;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+a { color: inherit; }
+
+::selection { background: var(--accent-wash); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Typographic primitives
+   ============================================================ */
+
+/* Small mono caps. Every label, every unit, every piece of chrome. */
+.label {
+  font-family: var(--font-ui);
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.mono { font-family: var(--font-ui); font-variant-numeric: tabular-nums; }
+
+.prose { max-width: var(--measure); }
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-variation-settings: 'opsz' 40;
+  letter-spacing: -.012em;
+  margin: 0;
+  line-height: 1.15;
+}
+
+h1 { font-size: 1.85rem; }
+h2 { font-size: 1.0625rem; }
+h3 { font-size: .9375rem; }
+
+p { margin: 0; }
+
+code {
+  font-family: var(--font-ui);
+  font-size: .85em;
+  background: var(--paper-sunk);
+  padding: .1em .35em;
+  border-radius: 2px;
+}
+
+/* Numerals.
+   Inline figures are MONO, not the display serif. Fraunces' display cut
+   draws `4` with an open apex that thins out below ~30px and reads as a
+   `1` — fatal in a tool whose entire job is comparing 8.4 against 4.6
+   down a column. Mono also gives true tabular alignment for free.
+   The one exception is the hero readout, big enough to render the
+   serif correctly, where it earns its keep as the page's focal point. */
+.figure {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -.02em;
+  line-height: 1;
+}
+.figure--lg  { font-size: 1.5rem; }
+.figure--sm  { font-size: 1rem; }
+
+.figure--xl {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 144;
+  font-weight: 500;
+  font-size: 3.25rem;
+  letter-spacing: -.03em;
+}
+
+.muted  { color: var(--ink-3); }
+.muted2 { color: var(--ink-4); }
+
+.note {
+  font-size: .8125rem;
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+
+hr.rule { border: 0; border-top: 1px solid var(--rule); margin: 0; }
+
+/* ============================================================
+   Masthead
+   ============================================================ */
+.masthead {
+  border-bottom: 1px solid var(--ink);
+  background: var(--paper);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.masthead__inner {
+  max-width: 82rem;
+  margin: 0 auto;
+  padding: .85rem var(--gutter);
+  display: flex;
+  align-items: baseline;
+  gap: 1.75rem;
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 144, 'wght' 600;
+  font-size: 1.125rem;
+  letter-spacing: -.02em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.wordmark span { color: var(--accent); }
+
+.nav { display: flex; gap: 1.1rem; flex-wrap: wrap; }
+
+.nav a {
+  font-family: var(--font-ui);
+  font-size: .75rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+  transition: color .15s, border-color .15s;
+}
+.nav a:hover { color: var(--ink); border-bottom-color: var(--rule-strong); }
+.nav a[aria-current] { color: var(--ink); border-bottom-color: var(--accent); }
+
+.masthead__end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Live scan state. A quiet pulse, not a spinner. */
+.scan-state {
+  font-family: var(--font-ui);
+  font-size: .75rem;
+  color: var(--ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  white-space: nowrap;
+}
+.scan-state::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--rule-strong);
+}
+.scan-state[data-running='1']::before {
+  background: var(--accent);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+@keyframes breathe { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+.btn {
+  font-family: var(--font-ui);
+  font-size: .75rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+  border-radius: 2px;
+  padding: .4rem .7rem;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.btn:hover { background: var(--paper-raised); border-color: var(--ink-3); color: var(--ink); }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn:disabled:hover { background: transparent; border-color: var(--rule-strong); }
+
+.btn--solid { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.btn--solid:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.btn--quiet { border-color: transparent; color: var(--ink-3); padding-inline: .35rem; }
+.btn--quiet:hover { border-color: var(--rule); }
+
+.btn--sm { font-size: .6875rem; padding: .25rem .5rem; }
+
+.linklike {
+  font-family: var(--font-ui);
+  font-size: .75rem;
+  letter-spacing: .04em;
+  color: var(--ink-3);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.linklike:hover { color: var(--ink); border-bottom-color: var(--rule-strong); }
+
+/* ============================================================
+   Forms
+   ============================================================ */
+input[type=text], input[type=password], input[type=number],
+input:not([type]), select, textarea {
+  font-family: var(--font-ui);
+  font-size: .8125rem;
+  color: var(--ink);
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  border-radius: 2px;
+  padding: .4rem .55rem;
+  /* Selects render taller than inputs by default, which knocks a row of
+     filter labels out of alignment. Pin them to one height instead. */
+  height: 2.1rem;
+  line-height: 1.2;
+}
+textarea { height: auto; }
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+input::placeholder { color: var(--ink-4); }
+
+.field { display: flex; flex-direction: column; gap: .3rem; }
+
+/* ============================================================
+   Page shell
+   ============================================================ */
+.shell {
+  max-width: 82rem;
+  margin: 0 auto;
+  padding: 2.25rem var(--gutter) 5rem;
+}
+
+.pagehead {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: .9rem;
+  border-bottom: 1px solid var(--ink);
+  margin-bottom: 1.75rem;
+}
+.pagehead__end { margin-left: auto; }
+
+.flash {
+  font-family: var(--font-ui);
+  font-size: .75rem;
+  border-left: 2px solid var(--accent);
+  background: var(--paper-raised);
+  padding: .55rem .8rem;
+  margin: 1.25rem auto 0;
+  max-width: 82rem;
+}
+
+/* ============================================================
+   The distribution strip — a ruled chart from a report
+   ============================================================ */
+.dist {
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 1.1rem 0 .9rem;
+  margin-bottom: 2rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 18rem);
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.dist__bars {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 3px;
+  height: 66px;
+  align-items: end;
+}
+.dist__bar { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; gap: 4px; }
+.dist__fill {
+  background: var(--ink-2);
+  min-height: 1px;
+  border-radius: 1px 1px 0 0;
+  transform-origin: bottom;
+  animation: grow .5s cubic-bezier(.2,.7,.3,1) backwards;
+}
+.dist__bar--under .dist__fill { background: var(--rule-strong); }
+.dist__tick {
+  font-family: var(--font-ui);
+  font-size: .625rem;
+  color: var(--ink-4);
+  text-align: center;
+  border-top: 1px solid var(--rule);
+  padding-top: 3px;
+}
+@keyframes grow { from { transform: scaleY(0); } }
+
+.stats { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+.stat__k { display: block; }
+.stat__v { font-family: var(--font-ui); font-size: .9375rem; color: var(--ink); }
+
+/* ============================================================
+   The board
+   ============================================================ */
+.board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+}
+.column { border-left: 1px solid var(--rule); padding: 0 1.1rem; min-width: 0; }
+.column:first-child { border-left: 0; padding-left: 0; }
+.column:last-child { padding-right: 0; }
+
+.column__head {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  padding-bottom: .5rem;
+  margin-bottom: .25rem;
+  border-bottom: 1px solid var(--ink);
+}
+.column__count { font-family: var(--font-ui); font-size: .6875rem; color: var(--ink-4); margin-left: auto; }
+
+/* A listing is a ruled entry in a list, not a floating card. */
+.entry {
+  border-bottom: 1px solid var(--rule);
+  padding: .95rem 0;
+  animation: rise .45s cubic-bezier(.2,.7,.3,1) backwards;
+}
+.entry:last-child { border-bottom: 0; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+.entry__top { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+
+.entry__score {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -.02em;
+  min-width: 3ch;
+}
+
+.entry__title {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 30;
+  font-size: .9375rem;
+  font-weight: 500;
+  line-height: 1.25;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.entry__title:hover { border-bottom-color: var(--ink); }
+
+.entry__meta {
+  font-family: var(--font-ui);
+  font-size: .6875rem;
+  color: var(--ink-3);
+  margin-top: .3rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  align-items: center;
+}
+/* Separators are generated, so a line that wraps never opens with an
+   orphaned interpunct. The stretch tag is a mark, not a list item. */
+.entry__meta > *:not(:first-child):not(.stretch)::before {
+  content: '·';
+  color: var(--ink-4);
+  margin-right: .4rem;
+}
+/* The detail page leads with the stretch mark, so whatever follows it
+   is a second child but still the first piece of prose. No separator. */
+.entry__meta > .stretch + *::before { content: none; margin-right: 0; }
+
+.entry__verdict {
+  font-size: .875rem;
+  line-height: 1.45;
+  color: var(--ink-2);
+  margin-top: .45rem;
+}
+
+/* Actions stay hidden until the entry is engaged with. Less noise
+   per screen, and it keeps the eye on the reasoning. */
+.entry__actions {
+  display: flex;
+  gap: .35rem;
+  align-items: center;
+  margin-top: .55rem;
+  opacity: 0;
+  transition: opacity .18s;
+}
+.entry:hover .entry__actions,
+.entry:focus-within .entry__actions { opacity: 1; }
+@media (hover: none) { .entry__actions { opacity: 1; } }
+
+/* Stretch: framed as a positive, in the accent, never as a warning. */
+.stretch {
+  font-family: var(--font-ui);
+  font-size: .625rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: .05rem .3rem;
+  white-space: nowrap;
+}
+/* Inside a dense table there is no room for the word, and a bordered
+   lone arrow reads as a button you can press. Unboxed it reads as a
+   margin mark, which is what it is. */
+.stretch--mark { border: 0; padding: 0; font-size: .8125rem; }
+
+.empty { font-family: var(--font-ui); font-size: .75rem; color: var(--ink-4); padding: 1.25rem 0; }
+
+/* ============================================================
+   Detail page — set as a document
+   ============================================================ */
+.doc { max-width: 48rem; }
+
+.doc__head { padding-bottom: 1.5rem; border-bottom: 1px solid var(--ink); display: flex; gap: 2rem; }
+.doc__title { font-size: 1.75rem; font-variation-settings: 'opsz' 60; }
+.doc__score { margin-left: auto; text-align: right; flex-shrink: 0; }
+
+section.band { padding: 1.75rem 0; border-bottom: 1px solid var(--rule); }
+.band__head { display: flex; align-items: baseline; gap: .75rem; margin-bottom: 1rem; }
+
+/* Score breakdown: a ruled table of dimensions. */
+.dim { padding: .7rem 0; border-top: 1px solid var(--rule); }
+.dim:first-of-type { border-top: 0; }
+.dim__row { display: flex; align-items: baseline; gap: .6rem; }
+.dim__name { font-family: var(--font-ui); font-size: .8125rem; color: var(--ink); }
+.dim__weight { font-family: var(--font-ui); font-size: .6875rem; color: var(--ink-4); }
+.dim__score { margin-left: auto; font-family: var(--font-ui); font-size: .8125rem; }
+.dim__score small { color: var(--ink-4); }
+
+.dim__track { height: 2px; background: var(--paper-sunk); margin: .45rem 0 .4rem; }
+.dim__fill {
+  height: 2px;
+  background: var(--ink);
+  animation: widen .6s cubic-bezier(.2,.7,.3,1) backwards;
+  transform-origin: left;
+}
+.dim--weakest .dim__fill { background: var(--accent); }
+.dim--weakest .dim__name { color: var(--accent); }
+@keyframes widen { from { transform: scaleX(0); } }
+
+.dim__def { font-size: .875rem; line-height: 1.5; color: var(--ink-3); }
+
+/* Reasons. Fit and against share one visual language, deliberately —
+   an interface that dresses up the upside produces bad applications. */
+.reasons { list-style: none; margin: 0; padding: 0; }
+.reasons li {
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  gap: .25rem;
+  font-size: .9375rem;
+  line-height: 1.55;
+  padding: .3rem 0;
+}
+.reasons li::before { content: '—'; color: var(--ink-4); }
+.reasons--flag li::before { content: '!'; color: var(--accent); font-family: var(--font-ui); }
+
+.pull {
+  font-family: var(--font-prose);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  border-left: 2px solid var(--rule-strong);
+  padding-left: 1rem;
+}
+
+.actionbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+
+.listing {
+  font-size: .875rem;
+  line-height: 1.6;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  max-height: 22rem;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  padding: 1rem;
+}
+
+/* ============================================================
+   Reviews
+   ============================================================ */
+.reviews { border: 1px solid var(--rule); background: var(--paper-raised); padding: 1.1rem; }
+.reviews__top { display: flex; gap: 1.5rem; align-items: flex-start; padding-bottom: 1rem; border-bottom: 1px solid var(--rule); }
+.reviews__cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; padding-top: 1rem; }
+
+.starbar { display: grid; grid-template-columns: .75rem 1fr 1.75rem; gap: .4rem; align-items: center; font-family: var(--font-ui); font-size: .6875rem; color: var(--ink-3); }
+.starbar__track { height: 4px; background: var(--paper-sunk); }
+.starbar__fill { height: 4px; background: var(--ink-3); }
+
+/* ============================================================
+   Tables
+   ============================================================ */
+/* A wide table scrolls inside its own box. The page body must never
+   scroll sideways — on a phone that turns every vertical swipe into a
+   fight with the layout. */
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; min-width: 42rem; }
+.table th {
+  font-family: var(--font-ui);
+  font-size: .6875rem;
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-align: left;
+  padding: .5rem .75rem;
+  border-bottom: 1px solid var(--ink);
+}
+.table td { padding: .8rem .75rem; border-bottom: 1px solid var(--rule); vertical-align: top; font-size: .9375rem; }
+.table tbody tr:hover { background: var(--paper-raised); }
+.table__num { font-family: var(--font-ui); font-variant-numeric: tabular-nums; width: 4rem; }
+
+.filters { display: flex; flex-wrap: wrap; gap: .85rem; align-items: end; padding: 1rem 0 1.25rem; border-bottom: 1px solid var(--rule); margin-bottom: .5rem; }
+
+/* ============================================================
+   Rows (ignored / applications)
+   ============================================================ */
+.row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.row__body { flex: 1; min-width: 0; }
+.row__end { margin-left: auto; flex-shrink: 0; }
+
+/* ============================================================
+   Prepare screen
+   ============================================================ */
+.copyblock {
+  font-family: var(--font-prose);
+  font-size: 1rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  padding: 1.1rem 1.25rem;
+  margin: 0;
+}
+.swap { border: 1px solid var(--rule); background: var(--paper-raised); padding: .8rem 1rem; margin-bottom: .6rem; }
+.swap__from { font-family: var(--font-ui); font-size: .6875rem; color: var(--ink-4); margin-bottom: .4rem; }
+.swap__row { display: flex; gap: 1rem; align-items: flex-start; }
+
+.counter { font-family: var(--font-ui); font-size: .6875rem; color: var(--ink-4); }
+.counter[data-over='1'] { color: var(--accent); }
+
+/* ============================================================
+   Sign in
+   ============================================================ */
+.signin { min-height: 100vh; display: grid; place-items: center; padding: 2rem; }
+.signin__card { width: 100%; max-width: 20rem; }
+.signin__mark { font-family: var(--font-display); font-variation-settings: 'opsz' 144, 'wght' 600; font-size: 1.75rem; letter-spacing: -.025em; }
+.signin__mark span { color: var(--accent); }
+
+/* ============================================================
+   Utilities
+   ============================================================ */
+.stack   { display: flex; flex-direction: column; }
+.stack-1 { gap: .35rem; } .stack-2 { gap: .7rem; }
+.stack-3 { gap: 1.1rem; } .stack-4 { gap: 1.75rem; }
+.inline  { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.push    { margin-left: auto; }
+.mt-1 { margin-top: .5rem; } .mt-2 { margin-top: 1rem; } .mt-3 { margin-top: 1.75rem; }
+
+/* ============================================================
+   Narrower screens. The board becomes a single reading column
+   rather than five squeezed ones.
+   ============================================================ */
+@media (max-width: 1100px) {
+  .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .column { border-left: 0; border-top: 1px solid var(--rule); padding: 1rem 0 0; }
+  .column:nth-child(odd) { padding-right: 1rem; }
+  .dist { grid-template-columns: 1fr; gap: 1.25rem; }
+  .reviews__cols { grid-template-columns: 1fr; gap: 1.25rem; }
+}
+@media (max-width: 680px) {
+  :root { --gutter: 1.15rem; }
+  .board { grid-template-columns: 1fr; }
+  .column:nth-child(odd) { padding-right: 0; }
+  .doc__head { flex-direction: column; gap: 1rem; }
+  .doc__score { margin-left: 0; text-align: left; }
+  .masthead__inner { flex-wrap: wrap; gap: .75rem 1.25rem; }
+  .reviews__top { flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

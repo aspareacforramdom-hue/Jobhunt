@@ -1,0 +1,96 @@
+# ============================================================
+# PROFILE SCHEMA
+# Every dimension the intake loop must resolve before searching.
+#
+# 'compiles_to' is the discipline: an answer that doesn't become
+# a filter, a weight, or an angle is noise and gets dropped.
+# ============================================================
+
+dimensions:
+
+  # ---------- HARD FILTERS (binary reject) ----------
+  - id: location
+    ask: "Which cities would you actually work in? Be honest about
+          relocation, and say 'remote only' if that's the truth."
+    compiles_to: filter
+    type: text
+
+  - id: min_ctc
+    ask: "Below what CTC would you say no, even to a great role?"
+    compiles_to: filter
+    type: number
+    unit: "LPA"
+
+  - id: notice_reality
+    ask: "How soon can you actually start?"
+    compiles_to: filter
+    type: single
+    options: ["Immediately", "1 month", "2-3 months", "Flexible"]
+
+  # ---------- SCORE WEIGHTS ----------
+  - id: build_vs_operate
+    ask: "Do you want to build new things, or improve existing systems?"
+    compiles_to: weight
+    type: single
+    options: ["Build from zero", "Mostly build", "Mostly improve", "Improve/optimise"]
+
+  - id: risk_appetite
+    ask: "Early-stage chaos or established company structure?"
+    compiles_to: weight
+    type: single
+    options: ["Seed/Series A", "Series B-C", "Late stage", "Large enterprise"]
+
+  - id: growth_vs_comfort
+    ask: "Would you take a harder role at lower pay if it moved you faster?"
+    compiles_to: weight
+    type: single
+    options: ["Yes, clearly", "Maybe, depends", "No, pay matters now"]
+
+  # Deliberately open text, not a menu. A fixed industry list is a
+  # hardcoded career target wearing a costume: whoever writes the options
+  # decides which fields exist, and everyone whose field is missing picks
+  # the least wrong box. The compiler reads the answer and invents the
+  # scoring dimensions from it.
+  - id: domain_pull
+    ask: "What subject matter would you genuinely enjoy working on daily?
+          Name it in your own words."
+    compiles_to: weight
+    type: text
+
+  # ---------- COMFORT FACTORS (your sketch — kept, made scoreable) ----------
+  - id: work_mode
+    ask: "What's your real preference on office days?"
+    compiles_to: weight
+    type: single
+    options: ["Fully remote", "1-2 days office", "3-4 days office", "Don't care"]
+
+  - id: culture_dealbreaker
+    ask: "What would make you quit within 6 months?"
+    compiles_to: filter
+    type: multi
+    options: ["Rigid hierarchy", "No autonomy", "Constant firefighting",
+              "Formal dress code", "Heavy travel", "None of these"]
+
+  # ---------- APPLICATION ANGLES (narrative fuel) ----------
+  - id: proof_points
+    ask: "Name 2-3 things you've actually shipped or run. Real ones."
+    compiles_to: angle
+    type: text
+
+  - id: unfair_advantage
+    ask: "What can you say that 95% of applicants for this role cannot?"
+    compiles_to: angle
+    type: text
+
+  - id: why_now
+    ask: "Why are you switching now, in one honest sentence?"
+    compiles_to: angle
+    type: text
+
+# ------------------------------------------------------------
+# LOOP EXIT RULES — your sketch's loop had no stopping condition
+# ------------------------------------------------------------
+loop:
+  max_questions: 7
+  stop_when: "no dimension marked ambiguous OR max_questions reached"
+  ask_order: "highest uncertainty first, not fixed script"

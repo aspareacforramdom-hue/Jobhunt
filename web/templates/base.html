@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Career Loop{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="/static/careerloop.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>◵</text></svg>">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead__inner">
+    <a href="/" class="wordmark">Career<span>&nbsp;/</span>Loop</a>
+
+    <nav class="nav">
+      {% set here = request.url.path %}
+      <a href="/" {% if here == '/' %}aria-current="page"{% endif %}>Board</a>
+      <a href="/jobs" {% if here.startswith('/jobs') %}aria-current="page"{% endif %}>Jobs</a>
+      <a href="/ignored" {% if here == '/ignored' %}aria-current="page"{% endif %}>Ignored</a>
+      <a href="/applications" {% if here.startswith('/applications') %}aria-current="page"{% endif %}>Applications</a>
+      <a href="/intake" {% if here == '/intake' %}aria-current="page"{% endif %}>Intake</a>
+    </nav>
+
+    <div class="masthead__end">
+      <span id="scan-state" class="scan-state"
+            data-running="{{ 1 if scan and scan.running else 0 }}">
+        {%- if scan and scan.running -%}
+          Scanning{% if scan.found %} · {{ scan.found }} found{% endif %}
+        {%- elif scan and scan.last_finished -%}
+          Last scan {{ scan.last_finished|ago }}
+        {%- else -%}
+          No scan yet
+        {%- endif -%}
+      </span>
+
+      <form method="post" action="/scan">
+        <button id="scan-btn" class="btn btn--sm"
+                {% if scan and scan.running %}disabled{% endif %}
+                {% if scan and scan.cooldown %}
+                title="Cooling down — {{ (scan.cooldown // 60) }} min left. Clicking anyway is allowed; it is your money."
+                {% endif %}>Scan now</button>
+      </form>
+
+      {% if user %}
+        <span class="label">{{ user['username'] }}</span>
+        <a href="/logout" class="linklike">Out</a>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+
+<main class="shell">
+  {% block content %}{% endblock %}
+</main>
+
+<script>
+// Keep the masthead honest while a scan runs on the background thread.
+(function () {
+  var el = document.getElementById('scan-state');
+  var btn = document.getElementById('scan-btn');
+  if (!el) return;
+
+  function tick() {
+    fetch('/scan/status').then(function (r) { return r.json(); })
+      .then(function (s) {
+        el.dataset.running = s.running ? '1' : '0';
+        btn.disabled = !!s.running;
+        if (s.running) {
+          el.textContent = 'Scanning · ' + s.phase +
+            (s.found ? ' · ' + s.found + ' found' : '');
+        } else if (s.error) {
+          el.textContent = 'Last scan failed';
+        } else if (s.last_finished) {
+          el.textContent = 'Last scan · ' + s.last_found + ' found';
+        } else {
+          el.textContent = 'No scan yet';
+        }
+      }).catch(function () {});
+  }
+  setInterval(tick, 15000);
+})();
+
+// Copy buttons on the prepare screen.
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest('[data-copy]');
+  if (!btn) return;
+  var src = document.getElementById(btn.dataset.copy);
+  if (!src) return;
+  navigator.clipboard.writeText(src.innerText.trim()).then(function () {
+    var was = btn.textContent;
+    btn.textContent = 'Copied';
+    setTimeout(function () { btn.textContent = was; }, 1400);
+  });
+});
+</script>
+</body>
+</html>

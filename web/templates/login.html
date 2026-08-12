@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · Career Loop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="/static/careerloop.css">
+</head>
+<body>
+  <div class="signin">
+    <div class="signin__card">
+      <p class="signin__mark">Career<span>&nbsp;/</span>Loop</p>
+      <p class="note mt-1" style="max-width: 17rem">
+        Scores roles against where you're going, not where you've been.</p>
+
+      <form method="post" action="/login" class="stack stack-3 mt-3">
+        <label class="field">
+          <span class="label">Username</span>
+          <input name="username" autocomplete="username" autofocus required>
+        </label>
+        <label class="field">
+          <span class="label">Password</span>
+          <input name="password" type="password" required
+                 autocomplete="current-password">
+        </label>
+
+        {% if error %}
+          <p class="flash" style="margin: 0">
+            That username and password don't match.</p>
+        {% endif %}
+
+        <button class="btn btn--solid" style="width: 100%">Sign in</button>
+      </form>
+
+      <p class="note mt-3">
+        Accounts come from <code>python run.py seed-users</code>. Passwords
+        are shown once and stored nowhere.</p>
+    </div>
+  </div>
+</body>
+</html>

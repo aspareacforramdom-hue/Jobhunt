@@ -1,0 +1,103 @@
+{# PHASE 5 — employer reviews, bias-corrected.
+
+   Rendered with one deliberate difference from every shopping site
+   this resembles: concerns sit in the same column width, same type
+   size and same order of reading as strengths, and are never
+   collapsed behind a "show more". Employer reviews skew negative
+   because people write them on the way out, so the rating is always
+   placed against the sector median rather than an absolute scale. #}
+{% set r = company.review_summary %}
+{% set breakdown = company.rating_breakdown or {} %}
+{% set n = r.review_count or company.review_count or 0 %}
+
+<section class="band">
+  <div class="band__head">
+    <h2>What employees say</h2>
+    <span class="label">AmbitionBox · {{ company.fetched_at|ago }}</span>
+    {% if r.confidence %}
+      <span class="label push">confidence {{ r.confidence }}</span>
+    {% endif %}
+  </div>
+
+  <div class="reviews">
+    <div class="reviews__top">
+      <div style="flex-shrink: 0">
+        <div class="figure figure--lg" style="font-size: 2.25rem">
+          {{ "%.1f"|format(r.rating or company.rating or 0) }}</div>
+        <p class="label" style="margin-top: .35rem">{{ n }} reviews</p>
+      </div>
+
+      <div style="min-width: 0; flex: 1">
+        {% if r.sector_context %}
+          <p style="font-size: .9375rem; line-height: 1.5">
+            {{ r.sector_context }}</p>
+        {% endif %}
+        {% if n < 20 %}
+          <p class="note mt-1">
+            Fewer than 20 reviews. That is an anecdote, not a signal —
+            treat everything below as one or two people's experience.</p>
+        {% endif %}
+        {% if r.current_vs_former %}
+          <p class="note mt-1">{{ r.current_vs_former }}</p>
+        {% endif %}
+      </div>
+
+      {% if breakdown %}
+        <div class="stack stack-1" style="width: 9.5rem; flex-shrink: 0">
+          {% set total = breakdown.values()|sum or 1 %}
+          {% for star in [5, 4, 3, 2, 1] %}
+            {% set c = breakdown.get(star|string, breakdown.get(star, 0)) %}
+            <div class="starbar">
+              <span>{{ star }}★</span>
+              <span class="starbar__track">
+                <span class="starbar__fill"
+                      style="display:block; width: {{ (c / total * 100)|round|int }}%"></span>
+              </span>
+              <span style="text-align: right">{{ c }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="reviews__cols">
+      <div>
+        <h3 class="label" style="margin-bottom: .6rem">What people like</h3>
+        {% if r.strengths %}
+          <ul class="reasons">
+            {% for s in r.strengths %}<li><span>{{ s }}</span></li>{% endfor %}
+          </ul>
+        {% else %}
+          <p class="note">No clear themes.</p>
+        {% endif %}
+      </div>
+
+      <div>
+        <h3 class="label" style="margin-bottom: .6rem">
+          What people complain about</h3>
+        {% if r.concerns %}
+          <ul class="reasons">
+            {% for c in r.concerns %}<li><span>{{ c }}</span></li>{% endfor %}
+          </ul>
+        {% else %}
+          <p class="note">No clear themes.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Red flags are a different category from ordinary grumbling and
+       get their own block so they cannot be read as more of the same. #}
+    {% if r.red_flags %}
+      <div class="mt-2" style="padding-top: 1rem; border-top: 1px solid var(--rule)">
+        <h3 class="label" style="color: var(--accent); margin-bottom: .5rem">
+          Red flags</h3>
+        <p class="note" style="margin-bottom: .5rem">
+          Different in kind from the complaints above — these are worth
+          asking about directly in an interview.</p>
+        <ul class="reasons reasons--flag">
+          {% for f in r.red_flags %}<li><span>{{ f }}</span></li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+  </div>
+</section>

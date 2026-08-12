@@ -1,0 +1,109 @@
+{# Shared pieces.
+
+   The score is a numeral, never a colour-coded pill. Colouring a 6.2
+   green is persuasion dressed as information, and this interface is
+   supposed to argue with evidence instead. #}
+
+{% macro stretch_tag() %}
+  {# The one place the accent means "good". Stretch roles are the
+     entire point of the tool, so they are marked, not warned about. #}
+  <span class="stretch"
+        title="Above your current level — this is what the tool is for">
+    ↗ stretch</span>
+{% endmacro %}
+
+
+{% macro entry(job, back="/", delay=0) %}
+<article class="entry" style="animation-delay: {{ delay }}ms">
+  <div class="entry__top">
+    <span class="entry__score">{{ "%.1f"|format(job.score or 0) }}</span>
+    <a href="/jobs/{{ job.id }}" class="entry__title">{{ job.title }}</a>
+    {# The mark belongs with the role name, not down among the metadata —
+       and keeping it out of the meta line stops that line wrapping onto
+       an orphaned separator. #}
+    {% if job.stretch %}{{ stretch_tag() }}{% endif %}
+  </div>
+
+  <p class="entry__meta">
+    <span>{{ job.company }}</span>
+    {% if job.location %}<span class="muted2">{{ job.location }}</span>{% endif %}
+    {% if job.company_rating %}
+      <span class="muted2"
+            title="{{ job.company_review_count or 0 }} employee reviews — read it against the sector, not against 5">
+        {{ "%.1f"|format(job.company_rating) }}★</span>
+    {% endif %}
+    <span class="muted2">{{ job.found_at|local_date }}</span>
+  </p>
+
+  {% if job.verdict %}
+    <p class="entry__verdict">{{ job.verdict }}</p>
+  {% endif %}
+
+  <div class="entry__actions">
+    {% if job.status == 'new' %}
+      <form method="post" action="/jobs/{{ job.id }}/status">
+        <input type="hidden" name="status" value="interested">
+        <input type="hidden" name="back" value="{{ back }}">
+        <button class="btn btn--sm">Interested</button>
+      </form>
+    {% endif %}
+    <form method="post" action="/jobs/{{ job.id }}/ignore">
+      <input type="hidden" name="back" value="{{ back }}">
+      <button class="btn btn--sm btn--quiet">Ignore</button>
+    </form>
+    <a href="/jobs/{{ job.id }}" class="linklike push">Read →</a>
+  </div>
+</article>
+{% endmacro %}
+
+
+{% macro distribution(dist, floor) %}
+<section class="dist">
+  <div>
+    <div class="inline" style="margin-bottom: .7rem">
+      <h2 style="font-size: .9375rem">Score distribution</h2>
+      <span class="label">where the bar actually sits</span>
+    </div>
+
+    {% if dist.count %}
+      <div class="dist__bars">
+        {% for b in dist.buckets %}
+          <div class="dist__bar {% if b.score < floor %}dist__bar--under{% endif %}"
+               title="{{ b.count }} scored between {{ b.score }} and {{ b.score + 1 }}">
+            <div class="dist__fill"
+                 style="height: {{ b.pct }}%; animation-delay: {{ loop.index0 * 40 }}ms"></div>
+            <div class="dist__tick">{{ b.score }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty">Nothing scored yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="stack stack-3">
+    {% if dist.count %}
+      <div class="stats">
+        <div><span class="label stat__k">Scored</span>
+             <span class="stat__v">{{ dist.count }}</span></div>
+        <div><span class="label stat__k">Median</span>
+             <span class="stat__v">{{ dist.median }}</span></div>
+        <div><span class="label stat__k">Top 10%</span>
+             <span class="stat__v">{{ dist.p90 }}+</span></div>
+        <div><span class="label stat__k">Range</span>
+             <span class="stat__v">{{ dist.min }}–{{ dist.max }}</span></div>
+      </div>
+
+      <p class="note">
+        There is no fixed pass mark. The board shows the strongest roles
+        relative to this run, so read a score against this distribution
+        rather than against 10.
+        {% if dist.below_floor %}
+          {{ dist.below_floor }} sat below the {{ floor }} floor and are
+          not shown.
+        {% endif %}
+      </p>
+    {% endif %}
+  </div>
+</section>
+{% endmacro %}

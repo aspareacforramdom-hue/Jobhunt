@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Intake · Career Loop{% endblock %}
+
+{% block content %}
+<div class="doc">
+  <div class="pagehead">
+    <h1>Intake</h1>
+    <span class="label">profile · dimensions · form</span>
+  </div>
+
+  <p class="prose" style="color: var(--ink-2); margin-bottom: 2rem">
+    Build the Google Form from the spec below, then upload its CSV export.
+    The compiler turns your answers into filters, weights and angles — and
+    names your scoring dimensions itself, so your board is scored on what
+    matters to you and not to anyone else.</p>
+
+  {% if profile and profile.weights %}
+    <section class="band" style="border-top: 1px solid var(--rule); padding-top: 1.75rem">
+      <div class="band__head">
+        <h2>Your scoring dimensions</h2>
+        <span class="label push">sums to 100</span>
+      </div>
+
+      {% for d, w in profile.weights.items() %}
+        <div class="dim">
+          <div class="dim__row">
+            <span class="dim__name">{{ d|dim_label }}</span>
+            <span class="dim__score">{{ w }}%</span>
+          </div>
+          <div class="dim__track">
+            <div class="dim__fill" style="width: {{ w }}%;
+                 animation-delay: {{ loop.index0 * 70 }}ms"></div>
+          </div>
+          <p class="dim__def">
+            {{ profile.dimension_definitions.get(d)
+               or 'Universal — applies to every career move.' }}</p>
+        </div>
+      {% endfor %}
+
+      {% if profile.search_terms %}
+        <p class="note mt-2">
+          Search terms — {{ profile.search_terms|join(' · ') }}</p>
+      {% endif %}
+    </section>
+
+    {% if profile.dropped %}
+      <section class="band">
+        <div class="band__head"><h2>Answers that compiled to nothing</h2></div>
+        <p class="note prose" style="margin-bottom: .75rem">
+          This is a feature. Every answer has to become a filter, a weight
+          or an angle — vague input producing confident output is the
+          failure mode of every AI career tool.</p>
+        <ul class="reasons prose">
+          {% for d in profile.dropped %}<li><span>{{ d }}</span></li>{% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+  {% endif %}
+
+  <section class="band">
+    <div class="band__head"><h2>Upload the Form's CSV export</h2></div>
+    <form method="post" action="/intake" enctype="multipart/form-data"
+          class="inline">
+      <input type="file" name="csv_file" accept=".csv,text/csv" required
+             style="font-family: var(--font-ui); font-size: .75rem">
+      <button class="btn btn--solid">Compile</button>
+    </form>
+    <p class="note prose mt-2">
+      If the sheet holds all three users' responses, the most recent row is
+      used. Columns are matched on the question text, so don't edit it.
+      This replaces your current profile and costs one LLM call.</p>
+  </section>
+
+  <section class="band" style="border-bottom: 0">
+    <div class="band__head">
+      <h2>Google Form spec</h2>
+      <a href="/intake/form-spec.txt" class="linklike push">Plain text ↓</a>
+    </div>
+
+    <div class="stack stack-3">
+      {% for q in spec %}
+        <div>
+          <p style="font-size: .9375rem; line-height: 1.5">
+            <span class="counter">{{ "%02d"|format(loop.index) }}</span>
+            &nbsp;{{ q.question }}</p>
+          <p class="note" style="margin-top: .15rem">
+            {{ q.type }} · compiles to a {{ q.compiles_to }}</p>
+          {% if q.options %}
+            <p class="note" style="margin-top: .15rem">
+              {{ q.options|join(' · ') }}</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    <p class="note prose mt-3" style="padding-top: 1rem;
+                                      border-top: 1px solid var(--rule)">
+      TODO — the CLI intake asks adaptive follow-up questions, whichever
+      dimension is most uncertain, up to seven. A static form can't, so v1
+      ships without it. <code>python run.py intake --cv cv.txt</code> still
+      runs the adaptive version.</p>
+  </section>
+</div>
+{% endblock %}

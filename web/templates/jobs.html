@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Jobs · Career Loop{% endblock %}
+
+{% block content %}
+<div class="pagehead">
+  <h1>All jobs</h1>
+  <span class="label">{{ jobs|length }} shown · ignored excluded</span>
+  <a href="/export.xlsx?{{ request.url.query }}" class="linklike pagehead__end"
+     title="Exports exactly what these filters show">Export ↓</a>
+</div>
+
+<form method="get" action="/jobs" class="filters">
+  <label class="field">
+    <span class="label">Search</span>
+    <input name="q" value="{{ filters.get('q','') }}"
+           placeholder="title or company" size="18">
+  </label>
+  <label class="field">
+    <span class="label">Min score</span>
+    <input name="min_score" value="{{ filters.get('min_score','') }}"
+           type="number" step="0.5" min="0" max="10" style="width: 5.5rem">
+  </label>
+  <label class="field">
+    <span class="label">Company</span>
+    <input name="company" value="{{ filters.get('company','') }}" size="12">
+  </label>
+  <label class="field">
+    <span class="label">Source</span>
+    <select name="source">
+      <option value="">any</option>
+      {% for s in sources %}
+        <option value="{{ s }}" {% if filters.get('source') == s %}selected{% endif %}>
+          {{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">
+    <span class="label">Found</span>
+    <select name="days">
+      <option value="">any time</option>
+      {% for d, lbl in [('1','today'),('7','this week'),('30','this month')] %}
+        <option value="{{ d }}" {% if filters.get('days') == d %}selected{% endif %}>
+          {{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">
+    <span class="label">Sort</span>
+    <select name="order">
+      {% for v, lbl in [('score','score'),('date','date found'),
+                        ('company','company rating'),('title','title')] %}
+        <option value="{{ v }}" {% if filters.get('order') == v %}selected{% endif %}>
+          {{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button class="btn">Apply</button>
+  <a href="/jobs" class="linklike">Clear</a>
+</form>
+
+{% if jobs %}
+ <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th class="table__num">Score</th>
+        <th>Role</th>
+        <th>Company</th>
+        <th style="width: 7rem">Status</th>
+        <th style="width: 5rem">Found</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+        <tr>
+          <td class="table__num">
+            <span class="figure figure--sm">{{ "%.1f"|format(j.score or 0) }}</span>
+          </td>
+          <td>
+            <a href="/jobs/{{ j.id }}" class="entry__title">{{ j.title }}</a>
+            {% if j.stretch %}
+              <span class="stretch stretch--mark" style="margin-left: .3rem"
+                    title="Stretch — above your current level, which is
+                           what this tool is for">↗</span>
+            {% endif %}
+            {% if j.verdict %}
+              <p class="note" style="margin-top: .25rem">{{ j.verdict }}</p>
+            {% endif %}
+          </td>
+          <td>
+            <span style="font-size: .875rem">{{ j.company }}</span>
+            {% if j.company_rating %}
+              <span class="counter"> {{ "%.1f"|format(j.company_rating) }}★</span>
+            {% endif %}
+            {% if j.location %}
+              <p class="counter" style="margin-top: .2rem">{{ j.location }}</p>
+            {% endif %}
+          </td>
+          <td class="label" style="text-transform: none">{{ j.status }}</td>
+          <td class="counter">{{ j.found_at|local_date }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+ </div>
+{% else %}
+  <p class="empty">
+    Nothing matches those filters. Ignored jobs are excluded here — they
+    live on <a href="/ignored" class="linklike">the ignored list</a>.</p>
+{% endif %}
+{% endblock %}

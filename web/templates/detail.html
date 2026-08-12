@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ job.title }} · Career Loop{% endblock %}
+
+{% block content %}
+{#
+  Set as a document, not a product page.
+
+  "Why it fits" and "Why it might not" share one visual language on
+  purpose — same type, same rules, same weight. An interface that
+  dresses up the upside and greys out the risk produces confident bad
+  applications, which is the specific failure this page exists to
+  prevent. Confidence should come from visible reasoning.
+#}
+<div class="doc">
+
+  <a href="/" class="linklike">← Board</a>
+
+  <header class="doc__head mt-2">
+    <div style="min-width: 0">
+      <h1 class="doc__title">{{ job.title }}</h1>
+      <p class="mt-1" style="color: var(--ink-2)">
+        {{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}
+      </p>
+      <p class="entry__meta mt-1">
+        {% if job.stretch %}{{ m.stretch_tag() }}{% endif %}
+        <span>found {{ job.found_at|local_date }}</span>
+        {% if job.source %}<span class="muted2">via {{ job.source }}</span>{% endif %}
+        <span class="muted2">{{ job.status }}</span>
+      </p>
+    </div>
+
+    <div class="doc__score">
+      <div class="figure figure--xl">{{ "%.1f"|format(job.score or 0) }}</div>
+      <p class="label" style="margin-top: .5rem">weighted score</p>
+    </div>
+  </header>
+
+  <!-- How the score is made, in this user's own vocabulary -->
+  <section class="band">
+    <div class="band__head">
+      <h2>How that score is made</h2>
+      <span class="label push">your dimensions</span>
+    </div>
+
+    {% if breakdown %}
+      <p class="note" style="margin-bottom: 1rem; max-width: var(--measure)">
+        These dimensions came out of your own intake. Someone else's board
+        is scored on entirely different ones.</p>
+
+      {% for d in breakdown %}
+        <div class="dim {% if d.is_weakest %}dim--weakest{% endif %}">
+          <div class="dim__row">
+            <span class="dim__name">{{ d.label }}</span>
+            <span class="dim__weight">{{ d.weight }}%</span>
+            <span class="dim__score">
+              {{ "%.0f"|format(d.score) }}<small>/10</small></span>
+          </div>
+          <div class="dim__track">
+            <div class="dim__fill"
+                 style="width: {{ (d.score * 10)|round|int }}%;
+                        animation-delay: {{ loop.index0 * 70 }}ms"></div>
+          </div>
+          <p class="dim__def">{{ d.definition }}</p>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="prose muted">
+        No per-dimension breakdown for this listing — it was scored
+        before the breakdown existed, or imported from the old JSON.</p>
+    {% endif %}
+  </section>
+
+  <!-- Why it fits -->
+  <section class="band">
+    <div class="band__head"><h2>Why it fits</h2></div>
+    {% if job.angle %}
+      <p class="pull prose">{{ job.angle }}</p>
+    {% else %}
+      <p class="prose muted">No angle was recorded for this one.</p>
+    {% endif %}
+    {% if job.verdict %}
+      <p class="prose mt-2" style="color: var(--ink-2)">{{ job.verdict }}</p>
+    {% endif %}
+  </section>
+
+  <!-- Why it might not. Never collapsed, never greyed out. -->
+  <section class="band">
+    <div class="band__head"><h2>Why it might not</h2></div>
+    {% if reasons_against %}
+      <ul class="reasons prose">
+        {% for r in reasons_against %}<li><span>{{ r }}</span></li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="prose muted">
+        Nothing stood out against this one. That is unusual — read the
+        description yourself before trusting it.</p>
+    {% endif %}
+  </section>
+
+  {% if company and company.review_summary %}
+    {% include "_reviews.html" %}
+  {% else %}
+    <section class="band">
+      <div class="band__head">
+        <h2>What employees say</h2>
+        <form method="post" action="/jobs/{{ job.id }}/reviews" class="push">
+          <button class="btn btn--sm">Look up reviews</button>
+        </form>
+      </div>
+      <p class="prose muted">
+        {% if company and company.rating %}
+          {{ "%.1f"|format(company.rating) }} on AmbitionBox{% if company.review_count %}
+          from {{ company.review_count }} reviews{% endif %}, carried across
+          from the listing. No themed summary has been fetched yet — read
+          that number as a starting point, not a verdict.
+        {% else %}
+          No review data for {{ job.company }} yet. Needs
+          <code>APIFY_TOKEN</code>.
+        {% endif %}
+      </p>
+    </section>
+  {% endif %}
+
+  <!-- Actions -->
+  <section class="band">
+    <div class="actionbar">
+      {% if job.status != 'interested' %}
+        <form method="post" action="/jobs/{{ job.id }}/status">
+          <input type="hidden" name="status" value="interested">
+          <input type="hidden" name="back" value="/jobs/{{ job.id }}">
+          <button class="btn">Interested</button>
+        </form>
+      {% endif %}
+
+      {% if application %}
+        <a href="/applications/{{ job.id }}" class="btn">
+          View prepared application</a>
+      {% else %}
+        <form method="post" action="/jobs/{{ job.id }}/prepare">
+          <button class="btn btn--solid">Prepare application</button>
+        </form>
+      {% endif %}
+
+      <a href="{{ job.url }}" target="_blank" rel="noopener"
+         class="linklike">Open listing ↗</a>
+
+      <form method="post" action="/jobs/{{ job.id }}/ignore"
+            class="push inline" style="gap: .4rem">
+        <input name="reason" placeholder="reason (optional)" size="18">
+        <input type="hidden" name="back" value="/">
+        <button class="btn btn--quiet">Ignore</button>
+      </form>
+    </div>
+
+    <p class="note mt-2">
+      Nothing here applies for you. Every draft is yours to send.</p>
+  </section>
+
+  {% if job.description %}
+    <section class="band" style="border-bottom: 0">
+      <div class="band__head"><h2>The listing</h2></div>
+      <div class="listing">{{ job.description }}</div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

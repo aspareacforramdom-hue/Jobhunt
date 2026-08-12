@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Ignored · Career Loop{% endblock %}
+
+{% block content %}
+<div class="doc">
+  <div class="pagehead">
+    <h1>Ignored</h1>
+    <span class="label">{{ jobs|length }}</span>
+  </div>
+
+  <p class="note prose" style="margin-bottom: 1.5rem">
+    Ignoring is an action, not a column — these left the board but were
+    not deleted. Restoring keeps the reason you gave, so a decision you
+    reverse stays on the record.</p>
+
+  {% if jobs %}
+    {% for j in jobs %}
+      <div class="row">
+        <span class="figure figure--sm" style="min-width: 2.5ch">
+          {{ "%.1f"|format(j.score or 0) }}</span>
+
+        <div class="row__body">
+          <a href="/jobs/{{ j.id }}" class="entry__title">{{ j.title }}</a>
+          <p class="entry__meta">
+            <span>{{ j.company }}</span>
+            {% if j.location %}<span class="muted2">· {{ j.location }}</span>{% endif %}
+          </p>
+          <p class="note mt-1">
+            {% if j.ignored_reason %}
+              Ignored — “{{ j.ignored_reason }}”
+            {% else %}
+              Ignored with no reason given
+            {% endif %}
+            · {{ j.ignored_at|ago }}
+          </p>
+        </div>
+
+        <form method="post" action="/jobs/{{ j.id }}/restore" class="row__end">
+          <input type="hidden" name="back" value="/ignored">
+          <button class="btn btn--sm">Restore</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="empty">Nothing ignored yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
