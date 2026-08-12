@@ -22,16 +22,38 @@ jobspy:
     - "Bengaluru, India"
 
 # LAYER B: Direct ATS — highest signal, zero scraping fragility
-# These companies post to Greenhouse/Lever/Ashby which have
-# clean public JSON endpoints. No ToS problem, no breakage.
+# Clean public JSON endpoints. No ToS problem, no bot protection, and
+# it is the only tier that never breaks — so breadth here is the
+# cheapest coverage this tool can buy.
+#
+# Every slug below was verified live against its API, not taken from a
+# search result. Note phonepe is on GREENHOUSE — it sat under `lever`
+# for months and 404'd on every single scan.
+#
+# To add a company: find its careers page, look at the URL, and take the
+# slug. boards.greenhouse.io/SLUG, jobs.lever.co/SLUG, or
+# jobs.ashbyhq.com/SLUG. A wrong slug logs one line and is skipped.
 ats_targets:
   greenhouse:
-    - stripe
+    - phonepe          # was miscategorised under lever
     - postman
-    - airbnb
+    - inmobi
+    - glance
+    - slice
+    - groww
+    - springboard
+    - newton
   lever:
-    - phonepe
-  ashby: []
+    - paytm
+    - meesho
+    - porter
+    - zeta
+    - mindtickle
+    - epifi
+    - cred
+  ashby:
+    - navi
+    - atlan
 
 # LAYER B2: Firecrawl Cloud — the long tail.
 # Covers what neither the ATS JSON nor Apify reaches: job boards this

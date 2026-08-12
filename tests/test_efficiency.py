@@ -201,6 +201,31 @@ def test_ignored_jobs_stay_off_the_board_and_out_of_the_spread(loaded):
 # ============================================================
 # Network fan-out
 # ============================================================
+def test_every_configured_ats_board_type_is_actually_fetched():
+    """`ashby:` sat in sources.yml for months with no fetcher behind it —
+    adding slugs produced silence, not listings."""
+    import yaml
+
+    configured = set(yaml.safe_load(
+        open("config/sources.yml", encoding="utf-8"))["ats_targets"])
+
+    for board in configured:
+        assert hasattr(discover, f"from_{board}"), (
+            f"sources.yml offers an '{board}:' list but there is no "
+            f"discover.from_{board} — slugs added there do nothing")
+
+
+def test_all_three_board_types_reach_the_fan_out(monkeypatch):
+    seen = []
+    for board in ("greenhouse", "lever", "ashby"):
+        monkeypatch.setattr(discover, f"from_{board}",
+                            lambda slug, b=board: seen.append(b) or [])
+
+    discover._fetch_ats({"greenhouse": ["a"], "lever": ["b"], "ashby": ["c"]})
+
+    assert sorted(seen) == ["ashby", "greenhouse", "lever"]
+
+
 def test_ats_boards_are_fetched_concurrently(monkeypatch):
     """Serial fetching cost ~960ms per board and landed on the boot scan."""
     live = {"now": 0, "peak": 0}

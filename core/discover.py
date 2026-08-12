@@ -98,6 +98,38 @@ def from_lever(slug):
     return out
 
 
+def from_ashby(slug):
+    """
+    Ashby boards, the third public-JSON ATS.
+
+    config/sources.yml has declared an `ashby:` key since the first
+    version, but nothing read it — adding slugs there produced silence,
+    no listings and no warning. Ashby skews toward newer, well-funded
+    startups, which is exactly the stretch-role end of the market this
+    tool is pointed at.
+    """
+    url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
+    out = []
+    try:
+        for j in _get_json(url).get("jobs", []):
+            if j.get("isListed") is False:
+                continue
+            out.append({
+                "title": j.get("title"),
+                "company": slug,
+                "location": j.get("location"),
+                # jobUrl is the public posting; applyUrl jumps straight
+                # into the form, which is not what a board should link to.
+                "url": j.get("jobUrl"),
+                "description": (j.get("descriptionPlain") or "")[:4000],
+                "source": "ashby",
+                "found_at": datetime.now().isoformat(),
+            })
+    except Exception as e:
+        print(f"  [ashby:{slug}] {e}")
+    return out
+
+
 # ------------------------------------------------------------
 # C. Apify — the PRIMARY Naukri path
 #
@@ -201,7 +233,8 @@ def _fetch_ats(ats):
     look like abuse to the ATS.
     """
     jobs = ([(from_greenhouse, s) for s in ats.get("greenhouse", []) or []]
-            + [(from_lever, s) for s in ats.get("lever", []) or []])
+            + [(from_lever, s) for s in ats.get("lever", []) or []]
+            + [(from_ashby, s) for s in ats.get("ashby", []) or []])
     if not jobs:
         return []
 
