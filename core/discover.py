@@ -6,6 +6,7 @@ Returns a flat list of dicts. No scoring here.
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -159,6 +160,81 @@ def _pick(row, field):
     return None
 
 
+# Naukri filters by numeric city id, not by name — passing "Mumbai"
+# fails the whole run. Only the metros this tool actually targets are
+# mapped; an unrecognised location is dropped rather than guessed at,
+# which searches all of India instead of the wrong city.
+_NAUKRI_CITY_IDS = {
+    "mumbai": "134", "navi mumbai": "138", "thane": "135",
+    "bengaluru": "97", "bangalore": "97",
+    "delhi": "382", "new delhi": "6", "noida": "220", "gurgaon": "122",
+    "hyderabad": "17", "pune": "139", "chennai": "183",
+    "kolkata": "232", "ahmedabad": "51",
+}
+
+
+def _naukri_cities(locations):
+    out = []
+    for loc in locations or []:
+        key = str(loc).split(",")[0].strip().lower()
+        city_id = _NAUKRI_CITY_IDS.get(key)
+        if city_id and city_id not in out:
+            out.append(city_id)
+    return out
+
+
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _from_naukri_item(item):
+    """
+    Map one dataset row to the shape the rest of the pipeline expects.
+
+    The actor nests the job under `jobDetails` rather than returning it
+    flat, so a top-level field lookup silently dropped every row — 50
+    listings in, 0 out, no error. Descriptions come back as HTML and are
+    stripped here; the scorer reads them as text.
+    """
+    if not isinstance(item, dict):
+        return None
+    job = item.get("jobDetails") if isinstance(item.get("jobDetails"), dict) \
+        else item
+
+    url = job.get("staticUrl") or job.get("jdURL")
+    title = job.get("title") or job.get("jobRole")
+    if not url or not title:
+        return None
+
+    company = (job.get("companyDetail") or {}).get("name") \
+        or job.get("staticCompanyName")
+    locations = job.get("locations") or []
+    location = ", ".join(
+        str(l.get("label") or l.get("name") or l) if isinstance(l, dict)
+        else str(l) for l in locations[:3]) or None
+
+    description = _TAG.sub(" ", job.get("description") or "")
+    description = " ".join(description.split())
+    if not description:
+        description = job.get("shortDescription") or ""
+
+    ab = job.get("ambitionBoxData") or {}
+    return {
+        "title": title,
+        "company": company,
+        "location": location,
+        "url": url,
+        "description": description[:4000],
+        "source": "naukri",
+        # This actor attaches AmbitionBox ratings to the listing, which
+        # is why it is preferred — Naukri and the review data in one
+        # call. See core/reviews.py.
+        "company_rating": ab.get("AggregateRating") or ab.get("rating"),
+        "company_review_count": ab.get("ReviewsCount")
+        or ab.get("reviewsCount"),
+        "found_at": datetime.now().isoformat(),
+    }
+
+
 def apify_available():
     return bool(os.environ.get("APIFY_TOKEN"))
 
@@ -173,40 +249,49 @@ def from_apify(cfg, search_terms, locations):
     url = APIFY_RUN.format(actor=actor, token=token)
     rows = []
 
+    # Verified against the actor's published input schema — the earlier
+    # guessed shape (searchQuery / location / maxItems) was wrong, and
+    # maxJobs is required, so the run would have silently used defaults.
     for term in search_terms:
         payload = {
             "keyword": term,
-            "searchQuery": term,
-            "location": ", ".join(locations) if locations else "India",
-            "maxItems": cfg.get("results_wanted", 40),
+            # The actor rejects anything under 50, so a smaller
+            # results_wanted would fail the whole run rather than
+            # quietly fetching fewer.
+            "maxJobs": max(50, int(cfg.get("results_wanted", 50))),
+            # Full descriptions cost more per job but the scorer cannot
+            # judge a role from a title alone.
+            "fetchDetails": bool(cfg.get("fetch_details", True)),
+            "freshness": str(cfg.get("freshness", "7")),
+            "sortBy": "date",
         }
+        cities = _naukri_cities(locations)
+        if cities:
+            payload["cities"] = cities
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode(),
             headers={"content-type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=300) as r:
                 items = json.loads(r.read().decode())
+        except urllib.error.HTTPError as e:
+            # The body carries which field the actor rejected. Without it
+            # a schema mistake looks identical to the actor being down.
+            detail = ""
+            try:
+                detail = e.read().decode()[:300]
+            except Exception:                        # noqa: BLE001
+                pass
+            print(f"  [apify] '{term}' HTTP {e.code}: {detail}")
+            continue
         except (urllib.error.URLError, ValueError, OSError) as e:
             print(f"  [apify] '{term}' failed: {e}")
             continue
 
         for it in items if isinstance(items, list) else []:
-            if not isinstance(it, dict) or not _pick(it, "url"):
-                continue
-            rows.append({
-                "title": _pick(it, "title"),
-                "company": _pick(it, "company"),
-                "location": _pick(it, "location"),
-                "url": _pick(it, "url"),
-                "description": (_pick(it, "description") or "")[:4000],
-                "source": "naukri",
-                # This actor attaches AmbitionBox ratings to the listing,
-                # which is why it is preferred — reviews and the Naukri
-                # block are solved in one call. See core/reviews.py.
-                "company_rating": _pick(it, "rating"),
-                "company_review_count": _pick(it, "review_count"),
-                "found_at": datetime.now().isoformat(),
-            })
+            row = _from_naukri_item(it)
+            if row:
+                rows.append(row)
 
     print(f"  [apify] {len(rows)} listings from Naukri")
     return rows

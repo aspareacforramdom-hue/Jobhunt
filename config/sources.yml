@@ -86,10 +86,16 @@ firecrawl:
 # silently breaks is worse than one that costs ~$7/month, so the paid,
 # maintained actor leads and JobSpy is the free fallback behind it.
 # Absent APIFY_TOKEN the scanner degrades to tiers 1-2 and says so.
+# Billed per event, so results_wanted is a real cost lever: each job
+# fetched with fetch_details on costs more than a bare listing. The free
+# Apify tier is $5/month — at 40 jobs per search term across three
+# users' terms, that is comfortable but not unlimited.
 apify:
   enabled: true           # no-ops without APIFY_TOKEN in the environment
   naukri_actor: "muhammetakkurtt/naukri-job-scraper"
-  results_wanted: 40
+  results_wanted: 50      # the actor's minimum; lower values are rejected
+  fetch_details: true     # off = titles only, which the scorer cannot judge
+  freshness: "7"          # days: all | 30 | 15 | 7 | 3 | 1
 
 # LAYER D: Government (optional, off by default)
 govt:

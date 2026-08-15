@@ -28,26 +28,47 @@ def _tokens(phrases):
     return out
 
 
-def _wanted_tokens(profile):
+def _wanted(profile):
     """
-    The words this person's target is made of. Computed once per scan,
-    not once per listing — it is identical for all of them.
+    What this person's target is made of, as whole phrases and as loose
+    words. Computed once per scan, not once per listing.
     """
     target = profile.get("target", {}) or {}
     # search_terms come from calibrate — what the market actually calls
     # this role, which is often not what the user called it.
-    return _tokens([target.get("role_family", "")]
-                   + list(target.get("alt_titles", []) or [])
-                   + list(profile.get("search_terms", []) or []))
+    phrases = [p.strip().lower() for p in
+               ([target.get("role_family", "")]
+                + list(target.get("alt_titles", []) or [])
+                + list(profile.get("search_terms", []) or [])) if p and p.strip()]
+    return phrases, _tokens(phrases)
 
 
-def _title_signal(title, tokens):
-    """Does the title look anything like what this person wants?"""
-    if not tokens:
+def _title_signal(title, phrases, tokens):
+    """
+    Does the title look anything like what this person wants?
+
+    Whole-phrase matches rank above scattered word matches, because
+    counting loose words treats "Associate Manager - Risk & Compliance"
+    as an equally good hit for "Product Manager" as "Senior Product
+    Manager" is — both contain two of the target's words. Since this
+    heuristic decides which listings are worth paying to score, that
+    mis-ranking spent the budget on the wrong roles.
+    """
+    if not phrases:
         return 0.0
     t = (title or "").lower()
+
+    for phrase in phrases:
+        if phrase in t:
+            return 1.0
+
+    if not tokens:
+        return 0.0
     hits = sum(1 for tok in tokens if tok in t)
-    return min(hits / 2.0, 1.0)
+    # Deliberately capped below a phrase match: a title sharing words
+    # with the target is worth a look, but never worth as much as one
+    # that actually names the role.
+    return min(hits / len(tokens), 1.0) * 0.6
 
 
 def _location_ok(loc, allowed):
@@ -83,7 +104,7 @@ def prefilter(jobs, profile, keep_ratio=0.25, min_keep=20):
     except (TypeError, ValueError):
         ceiling = None
 
-    tokens = _wanted_tokens(profile)
+    phrases, tokens = _wanted(profile)
 
     survivors = []
     for j in jobs:
@@ -102,7 +123,7 @@ def prefilter(jobs, profile, keep_ratio=0.25, min_keep=20):
             if need is not None and need > ceiling:
                 continue
 
-        sig = _title_signal(title, tokens)
+        sig = _title_signal(title, phrases, tokens)
         if sig == 0:
             continue
 

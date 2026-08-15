@@ -221,6 +221,33 @@ def test_prefilter_applies_this_users_own_exclusions(brand_profile):
     assert prefilter.prefilter(jobs, brand_profile) == []
 
 
+def test_a_title_naming_the_role_outranks_one_that_merely_shares_words():
+    """Counting loose words scored 'Associate Manager - Risk' as high as
+    'Senior Brand Manager' for a brand search, so the free filter spent
+    the scoring budget on the wrong roles."""
+    profile = {"target": {"role_family": "Brand Manager",
+                          "alt_titles": ["Associate Brand Manager"]},
+               "hard_filters": {}, "search_terms": ["Brand Manager"]}
+    jobs = [{"url": "u1", "title": "Associate Manager - Risk & Compliance",
+             "description": "d"},
+            {"url": "u2", "title": "Senior Brand Manager", "description": "d"}]
+
+    kept = prefilter.prefilter(jobs, profile)
+
+    assert kept[0]["title"] == "Senior Brand Manager", \
+        "a title that names the role must rank above one sharing stray words"
+    assert kept[0]["_prefilter_signal"] > kept[1]["_prefilter_signal"]
+
+
+def test_a_phrase_match_scores_full_marks(brand_profile):
+    phrases, tokens = prefilter._wanted(brand_profile)
+
+    assert prefilter._title_signal("Senior Brand Manager, D2C",
+                                   phrases, tokens) == 1.0
+    assert prefilter._title_signal("Associate Manager - Payroll",
+                                   phrases, tokens) < 1.0
+
+
 def test_prefilter_keeps_senior_stretch_titles(brand_profile):
     """`Head of`, `Principal`, `Director` used to be dropped outright —
     those are the stretch roles the tool exists to surface."""
