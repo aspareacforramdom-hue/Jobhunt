@@ -71,14 +71,23 @@ ats_targets:
 # No-ops entirely without FIRECRAWL_API_KEY.
 firecrawl:
   enabled: true
-  search_enabled: true
-  results_per_term: 10       # results per search term
-  max_terms_per_scan: 6      # union of all users' terms, capped
+  # OFF after live testing. Open-web search returns job-board INDEX
+  # pages ("578 Brand Manager jobs in Mumbai — LinkedIn"), not
+  # individual postings, and the aggregators worth scraping — LinkedIn,
+  # Glassdoor, Indeed — return 403. Naukri via Apify already covers that
+  # ground properly, with full descriptions. Turn back on only if you
+  # find a query shape that surfaces postings rather than search pages.
+  search_enabled: false
+  results_per_term: 10
+  max_terms_per_scan: 6
   max_enrich_per_scan: 25    # full-text fetches, post-prefilter only
   max_pages_per_scan: 15
-  # Careers URLs for employers not on Greenhouse/Lever/Ashby.
-  # Add the ones your three users actually care about.
-  career_pages: []
+  # This is where Firecrawl earns its place: employers whose careers
+  # page is bespoke, so neither the ATS JSON nor Naukri reaches them.
+  # Verified working; note descriptions from these pages are short, so
+  # the scorer judges them on less than it gets from Naukri.
+  career_pages:
+    - https://careers.swiggy.com/#/careers
 
 # LAYER C: Apify — the PRIMARY path for Naukri, not the fallback.
 # Naukri's bot protection changes monthly and already returned

@@ -244,6 +244,36 @@ def test_roles_on_one_career_page_do_not_collapse_into_one_row(monkeypatch):
     assert all(r["company"] == "acme.test" for r in rows)
 
 
+def test_the_extractor_echoing_the_page_url_does_not_collapse_roles(
+        monkeypatch):
+    """Observed live: a careers page returned its own URL as every role's
+    url, so ten Swiggy openings deduped down to one in the shared pool."""
+    page = "https://acme.test/careers"
+    monkeypatch.setattr(firecrawl, "_post", lambda p, d: {
+        "success": True, "data": {"json": {"jobs": [
+            {"title": "Sales Manager I", "location": "Pune", "url": page},
+            {"title": "Sales Manager I", "location": "Ambala", "url": page},
+            {"title": "Content Executive", "location": "Mumbai",
+             "url": page + "/"}]}}})
+
+    rows = firecrawl.scrape_career_pages(_cfg(career_pages=[page]))
+
+    assert len({r["url"] for r in rows}) == 3, \
+        "roles sharing the page URL collapsed into one pool entry"
+
+
+def test_a_genuine_per_role_link_is_kept(monkeypatch):
+    monkeypatch.setattr(firecrawl, "_post", lambda p, d: {
+        "success": True, "data": {"json": {"jobs": [
+            {"title": "Brand Manager",
+             "url": "https://acme.test/careers/brand-manager-123"}]}}})
+
+    rows = firecrawl.scrape_career_pages(
+        _cfg(career_pages=["https://acme.test/careers"]))
+
+    assert rows[0]["url"] == "https://acme.test/careers/brand-manager-123"
+
+
 def test_the_search_query_comes_from_the_profile_not_from_this_module(
         monkeypatch):
     """No role, industry or seniority word may be baked in here — the

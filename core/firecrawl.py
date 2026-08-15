@@ -208,15 +208,22 @@ def scrape_career_pages(cfg, dry=False):
         for j in found:
             if not isinstance(j, dict) or not j.get("title"):
                 continue
+
+            # Many career pages list roles without per-role links, and
+            # the extractor then hands back the page's own URL for every
+            # one of them. Since url is the shared pool's identity, that
+            # collapses a whole company's openings into a single row —
+            # ten Swiggy roles became one. Synthesise a stable per-role
+            # fragment whenever the URL is missing or is just the page.
+            found_url = (j.get("url") or "").strip()
+            if not found_url or found_url.rstrip("/") == url.rstrip("/"):
+                found_url = f"{url}#{_slug(j['title'])}-{_slug(j.get('location'))}"
+
             rows.append({
                 "title": j.get("title"),
                 "company": j.get("company") or _host(url),
                 "location": j.get("location"),
-                # Many career pages list roles without per-role links.
-                # Falling back to the page URL would collapse every role
-                # at that company into one row, since url is the pool's
-                # identity — so synthesise a stable per-role fragment.
-                "url": j.get("url") or f"{url}#{_slug(j['title'])}",
+                "url": found_url,
                 "description": (j.get("description") or "")[:4000],
                 "source": "firecrawl",
             })
