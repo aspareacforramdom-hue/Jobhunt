@@ -246,3 +246,51 @@ def test_workday_listings_are_mapped_to_openable_urls(monkeypatch):
     assert rows[0]["url"] == ("https://acme.wd5.myworkdayjobs.com/en-US/"
                              "AcmeCareers/job/Bengaluru/Staff-Engineer_JR123")
     assert rows[0]["source"] == "workday"
+
+
+# ============================================================
+# Instahyre — the free India-first source
+# ============================================================
+def test_instahyre_listings_are_mapped_and_deduped(monkeypatch):
+    """
+    The feed pages, and pages overlap. A duplicate reaching the pool is
+    a listing someone is shown twice and, worse, scored twice.
+    """
+    import json as _json
+    page = {"objects": [
+        {"title": "Backend Engineer", "public_url": "https://i/1",
+         "employer": {"company_name": "Acme"},
+         "locations": "Bangalore,Pune", "keywords": "python, sql"},
+        {"title": "No URL here", "employer": {"company_name": "Acme"}},
+    ]}
+
+    class _Resp:
+        def read(self):
+            return _json.dumps(page).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(discover.urllib.request, "urlopen",
+                        lambda *a, **k: _Resp())
+
+    rows = discover.from_instahyre(max_pages=3)
+
+    assert len(rows) == 1, "the same page thrice must not yield three rows"
+    assert rows[0]["company"] == "Acme"
+    assert rows[0]["location"] == "Bangalore, Pune"
+    assert rows[0]["source"] == "instahyre"
+
+
+def test_instahyre_stops_cleanly_when_the_feed_fails(monkeypatch):
+    """A source that is free is still a source that can be down, and it
+    must not take the rest of the scan with it."""
+    def boom(*a, **k):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(discover.urllib.request, "urlopen", boom)
+
+    assert discover.from_instahyre(max_pages=3) == []

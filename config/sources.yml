@@ -83,6 +83,19 @@ ats_targets:
   # (verified live — that tenant alone advertises 2,000 roles)
   workday: []
 
+# LAYER B1: Instahyre — free, no key, India-specific.
+# 13,949 live roles behind a public JSON endpoint, verified live. Not
+# per-company like the ATS boards, so it reaches employers listed
+# nowhere above.
+#
+# It cannot be searched — every query parameter returns the same full
+# set — so it is bounded by pages and the free local shortlister does
+# the filtering. 8 pages is roughly 280 listings for a few seconds of
+# HTTP and no money at all.
+instahyre:
+  enabled: true
+  max_pages: 8
+
 # LAYER B2: Firecrawl Cloud — the long tail.
 # Covers what neither the ATS JSON nor Apify reaches: job boards this
 # tool has no adapter for, and employers whose careers page is bespoke

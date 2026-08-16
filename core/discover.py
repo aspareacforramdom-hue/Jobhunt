@@ -198,6 +198,69 @@ def from_smartrecruiters(slug, cap=100):
     return out
 
 
+def from_instahyre(max_pages=8, page_size=35):
+    """
+    Instahyre — India-specific tech hiring, open, free, no key.
+
+    Verified live: 13,949 live roles behind a public JSON endpoint.
+    This is the largest free India-first source found, and unlike the
+    ATS boards it is not per-company, so one call reaches employers
+    nobody has listed anywhere in this config.
+
+    IT CANNOT BE SEARCHED. Every parameter tried — q, query, search,
+    keyword, title, company_name — returns the identical 13,949 and the
+    identical first page, so there is no server-side filtering to lean
+    on. That is fine here in a way it would not be for a paid source:
+    the shortlister is local and free at about 7ms a listing, so pulling
+    a few hundred and ranking them costs nothing but a few seconds of
+    HTTP. It is bounded by pages rather than by relevance because
+    relevance is not on offer.
+
+    No descriptions in the feed — same as SmartRecruiters and Workday,
+    and the shortlister reads titles anyway.
+    """
+    base = "https://www.instahyre.com/api/v1/job_search"
+    out, seen = [], set()
+    for page in range(max_pages):
+        url = f"{base}?limit={page_size}&offset={page * page_size}"
+        try:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "Mozilla/5.0",
+                              "accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                payload = json.loads(r.read().decode())
+        except Exception as e:
+            print(f"  [instahyre] page {page}: {e}")
+            break
+
+        objects = payload.get("objects") or []
+        if not objects:
+            break
+
+        for j in objects:
+            url_ = j.get("public_url")
+            title = j.get("title")
+            if not url_ or not title or url_ in seen:
+                continue
+            seen.add(url_)
+            employer = j.get("employer") or {}
+            # `keywords` is the only text the feed carries, and the
+            # scorer does better with something than with nothing.
+            keywords = j.get("keywords") or ""
+            out.append({
+                "title": title,
+                "company": employer.get("company_name"),
+                "location": (j.get("locations") or "").replace(",", ", ")
+                or None,
+                "url": url_,
+                "description": str(keywords)[:4000],
+                "source": "instahyre",
+                "found_at": _now(),
+            })
+    print(f"  [instahyre] {len(out)} listings from {max_pages} pages")
+    return out
+
+
 def from_workday(target, cap=100):
     """
     Workday boards — the largest single gap in free coverage.
@@ -805,6 +868,19 @@ def discover_all(sources, dry=False):
     print("→ Tier 1: direct ATS boards (public JSON, never breaks)...")
     rows += _fetch_ats(ats)
     notes.append(f"ATS boards: {len(rows)} listings")
+
+    # Tier 1b: Instahyre — free, no key, and India-specific, which the
+    # ATS boards are not. Reaches employers listed nowhere in the config.
+    insta = sources.get("instahyre", {})
+    # Explicit opt-in, like every other tier here. Defaulting this to ON
+    # when the key is simply absent meant any caller passing a partial
+    # sources dict reached out to the internet without asking — a unit
+    # test caught it by fetching 280 real listings mid-suite. The shipped
+    # config turns it on; a config that never mentions it does not.
+    if insta.get("enabled") is True:
+        before = len(rows)
+        rows += from_instahyre(int(insta.get("max_pages", 8)))
+        notes.append(f"Instahyre: {len(rows) - before} listings")
 
     apify_cfg = sources.get("apify", {})
     terms = sources.get("jobspy", {}).get("search_terms", [])
