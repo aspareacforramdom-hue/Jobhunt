@@ -11,11 +11,31 @@
 # LAYER A: Aggregators via JobSpy (free, one call, concurrent)
 # Tier 2 reliability: works, but breaks without warning.
 jobspy:
-  enabled: false   # flip on when running from your home IP
-  sites: ["linkedin", "indeed", "google"]
+  # ON. Tested from this machine's own residential Indian IP:
+  #   indeed    15 jobs WITH full descriptions in 2.6s
+  #   linkedin  15 jobs in 6.0s
+  #   naukri    406 "recaptcha required"  <- blocked, see below
+  #   google    0 jobs
+  #
+  # Indeed is the valuable one: it is the only free source here that
+  # returns full descriptions, which is better raw material for the
+  # scorer than the ATS boards give it.
+  enabled: true
+  sites: ["indeed", "linkedin"]   # google returned nothing; naukri blocks
   country_indeed: "India"
-  results_wanted: 40
-  hours_old: 48          # only fresh listings
+  results_wanted: 20
+  hours_old: 168         # a week — this tier has no per-result cost
+
+  # Every term is searched in every location, so the combinations
+  # multiply and each one costs ~5-10 seconds of wall clock. 12 is about
+  # two minutes, which a background scan can absorb.
+  max_searches_per_scan: 12
+
+  # Naukri via the free scraper was the original fallback, on the theory
+  # that only CLOUD IPs get blocked. Measured from a residential Indian
+  # IP: still 406. So it is off — attempting it costs ~1.3s per search
+  # to be refused, every time.
+  try_naukri_free: false
   # Fallback locations, used only for a user whose profile names none.
   default_locations:
     - "Mumbai, India"

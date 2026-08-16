@@ -32,6 +32,25 @@ def _now():
 # ------------------------------------------------------------
 # A. Aggregators via JobSpy
 # ------------------------------------------------------------
+def _clean(value):
+    """
+    A pandas cell, made safe to treat as text.
+
+    JobSpy returns a DataFrame, and a missing string cell there is not
+    None — it is float('nan'), which is TRUTHY. So the obvious
+    `(x or "")[:4000]` sails past the guard and then raises
+    "'float' object is not subscriptable", killing the rest of that
+    search. Measured, this silently discarded every LinkedIn row on
+    every term, because LinkedIn listings carry no description.
+    """
+    if value is None:
+        return None
+    if isinstance(value, float):
+        # NaN is the only float that is not equal to itself.
+        return None if value != value else str(value)
+    return str(value)
+
+
 def from_jobspy(cfg):
     """
     Naukri + LinkedIn + Indeed + Google.
@@ -49,32 +68,43 @@ def from_jobspy(cfg):
 
     rows = []
     locations = list(cfg.get("locations") or []) or [None]
-    for term in cfg.get("search_terms") or []:
-        for loc in locations:
-            try:
-                df = scrape_jobs(
-                    site_name=cfg.get("sites") or ["linkedin", "indeed"],
-                    search_term=term,
-                    location=loc,
-                    results_wanted=int(cfg.get("results_wanted", 40)),
-                    hours_old=int(cfg.get("hours_old", 48)),
-                    country_indeed=cfg.get("country_indeed", "India"),
-                )
-                for _, r in df.iterrows():
-                    rows.append({
-                        "title": r.get("title"),
-                        "company": r.get("company"),
-                        "location": r.get("location"),
-                        "url": r.get("job_url"),
-                        "description": (r.get("description") or "")[:4000],
-                        "source": r.get("site"),
-                        "skills": r.get("skills"),
-                        "experience_range": r.get("experience_range"),
-                        "company_rating": r.get("company_rating"),
-                        "found_at": _now(),
-                    })
-            except Exception as e:
-                print(f"  [jobspy] {term} @ {loc} failed: {e}")
+    terms = list(cfg.get("search_terms") or [])
+
+    # Every term is searched in every location, so six terms across two
+    # cities is twelve searches at roughly 5-10 seconds each. Unbounded,
+    # a growing term list quietly turns a two-minute scan into ten.
+    budget = int(cfg.get("max_searches_per_scan", 12) or 0)
+    pairs = [(t, l) for t in terms for l in locations]
+    if budget and len(pairs) > budget:
+        print(f"  [jobspy] {len(pairs)} term/location searches capped at "
+              f"{budget}")
+        pairs = pairs[:budget]
+
+    for term, loc in pairs:
+        try:
+            df = scrape_jobs(
+                site_name=cfg.get("sites") or ["linkedin", "indeed"],
+                search_term=term,
+                location=loc,
+                results_wanted=int(cfg.get("results_wanted", 40)),
+                hours_old=int(cfg.get("hours_old", 48)),
+                country_indeed=cfg.get("country_indeed", "India"),
+            )
+            for _, r in df.iterrows():
+                rows.append({
+                    "title": _clean(r.get("title")),
+                    "company": _clean(r.get("company")),
+                    "location": _clean(r.get("location")),
+                    "url": _clean(r.get("job_url")),
+                    "description": (_clean(r.get("description")) or "")[:4000],
+                    "source": _clean(r.get("site")),
+                    "skills": _clean(r.get("skills")),
+                    "experience_range": _clean(r.get("experience_range")),
+                    "company_rating": r.get("company_rating"),
+                    "found_at": _now(),
+                })
+        except Exception as e:
+            print(f"  [jobspy] {term} @ {loc} failed: {e}")
     return rows
 
 
@@ -993,10 +1023,13 @@ def discover_all(sources, dry=False):
         print("→ Tier 2: JobSpy (LinkedIn/Indeed)...")
         before = len(rows)
         cfg = dict(sources["jobspy"])
-        if not naukri_ok and "naukri" not in cfg.get("sites", []):
-            # Free fallback for Naukri only when the paid path produced
-            # nothing. Expected to fail from some IPs; that is the point
-            # of it being the fallback.
+        if (not naukri_ok and cfg.get("try_naukri_free")
+                and "naukri" not in cfg.get("sites", [])):
+            # The free Naukri fallback, now opt-in and off by default.
+            # It was written on the theory that only cloud IPs get
+            # blocked; measured from a residential Indian IP it still
+            # returns 406 "recaptcha required", so leaving it on spent
+            # ~1.3s per search being refused on every single scan.
             cfg["sites"] = list(cfg.get("sites", [])) + ["naukri"]
         rows += from_jobspy(cfg)
         notes.append(f"JobSpy: {len(rows) - before} listings")

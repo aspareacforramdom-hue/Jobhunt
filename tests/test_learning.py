@@ -294,3 +294,84 @@ def test_instahyre_stops_cleanly_when_the_feed_fails(monkeypatch):
     monkeypatch.setattr(discover.urllib.request, "urlopen", boom)
 
     assert discover.from_instahyre(max_pages=3) == []
+
+
+# ============================================================
+# JobSpy — free breadth, and the NaN that was eating it
+# ============================================================
+def test_a_missing_pandas_cell_does_not_kill_the_search(monkeypatch):
+    """
+    JobSpy returns a DataFrame, and a missing string cell there is
+    float('nan') — which is TRUTHY. So `(x or "")[:4000]` sailed past
+    the guard and raised "'float' object is not subscriptable", killing
+    the rest of that search.
+
+    Measured effect: every LinkedIn row was silently discarded on every
+    term, because LinkedIn listings carry no description.
+    """
+    import types
+
+    class _Row(dict):
+        def get(self, k, default=None):
+            return dict.get(self, k, default)
+
+    class _DF:
+        def iterrows(self):
+            yield 0, _Row({"title": "Product Manager", "company": "Acme",
+                           "location": "Bengaluru",
+                           "job_url": "https://li/1",
+                           "description": float("nan"),   # the killer
+                           "site": "linkedin"})
+
+    fake = types.ModuleType("jobspy")
+    fake.scrape_jobs = lambda **kw: _DF()
+    monkeypatch.setitem(__import__("sys").modules, "jobspy", fake)
+
+    rows = discover.from_jobspy({"search_terms": ["pm"],
+                                 "locations": ["Bengaluru"]})
+
+    assert len(rows) == 1, "a row with no description must still arrive"
+    assert rows[0]["description"] == ""
+    assert rows[0]["source"] == "linkedin"
+
+
+def test_the_search_count_is_bounded(monkeypatch):
+    """Terms multiply by locations, and each pair costs 5-10 seconds of
+    wall clock. Unbounded, a growing term list turns a two-minute scan
+    into ten."""
+    import types
+    calls = []
+
+    class _DF:
+        def iterrows(self):
+            return iter(())
+
+    fake = types.ModuleType("jobspy")
+    fake.scrape_jobs = lambda **kw: calls.append(kw) or _DF()
+    monkeypatch.setitem(__import__("sys").modules, "jobspy", fake)
+
+    discover.from_jobspy({"search_terms": [f"t{i}" for i in range(9)],
+                          "locations": ["A", "B", "C"],
+                          "max_searches_per_scan": 5})
+
+    assert len(calls) == 5, "27 pairs should have been capped to 5"
+
+
+def test_the_blocked_free_naukri_path_is_not_attempted(monkeypatch):
+    """
+    Measured from a residential Indian IP: Naukri still answers the free
+    scraper with 406 "recaptcha required". Leaving the fallback on spent
+    ~1.3s per search being refused, on every scan.
+    """
+    seen = {}
+    monkeypatch.setattr(discover, "from_jobspy",
+                        lambda cfg: seen.update(cfg) or [])
+    monkeypatch.setattr(discover, "_fetch_ats", lambda ats: [])
+
+    discover.discover_all({
+        "ats_targets": {}, "apify": {"enabled": False},
+        "firecrawl": {"enabled": False},
+        "jobspy": {"enabled": True, "sites": ["indeed"],
+                   "search_terms": ["pm"], "try_naukri_free": False}})
+
+    assert "naukri" not in seen.get("sites", [])
