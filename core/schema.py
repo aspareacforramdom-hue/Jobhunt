@@ -149,4 +149,42 @@ MIGRATIONS = [
       PRIMARY KEY (platform, slug)
     );
     """,
+
+    # 5 — how sure we are that a discovered board is the right company.
+    #
+    # "Tata Consumer Products" can only be probed as guesses, and the
+    # last guess tried is the bare first word — which found the real
+    # `zeta` board for "Zeta Suite" but would just as happily match some
+    # other Tata on `tata`. Boards found that way are recorded as
+    # `loose` so a person can glance at them, rather than being either
+    # silently trusted or silently dropped.
+    """
+    ALTER TABLE job_boards ADD COLUMN confidence TEXT NOT NULL DEFAULT 'exact';
+    """,
+
+    # 6 — the résumé itself, kept rather than thrown away.
+    #
+    # It used to be read once during intake, compiled into a handful of
+    # sentences, and discarded. Everything downstream then judged jobs
+    # against that summary: the scorer saw ~3 sentences about a person
+    # and the tailor was asked to quote "an existing bullet from your CV"
+    # from a document it had never seen — so it invented one, and the
+    # interface presented the invention as something the user had
+    # written. This column is what makes that promise keepable.
+    #
+    # PRIVACY: this is the most sensitive text in the database. It never
+    # leaves it — core/publish.py must never emit it (there is a test),
+    # and it is not in any list query.
+    """
+    ALTER TABLE profiles ADD COLUMN resume_text TEXT;
+    """,
+
+    # 7 — the line from the candidate's own CV that makes the case for a
+    # role. Stored per user, like every other opinion about a job, and
+    # rendered on the detail page: the difference between "you would be
+    # good at this" and "here is the thing you have already done that
+    # proves it".
+    """
+    ALTER TABLE user_jobs ADD COLUMN evidence TEXT;
+    """,
 ]

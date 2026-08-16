@@ -265,6 +265,14 @@ def run_intake(cv_path):
     print("\n→ Compiling your answers into search constraints...")
     profile = compile_profile(parsed, answers)
 
+    # Keep the CV itself, not only what was distilled from it. Scoring
+    # and tailoring both read it later; without it they work from the
+    # handful of sentences above, which is how the tailor ended up
+    # inventing "existing" CV bullets.
+    profile["resume_text"] = cv_text
+    with open(PROFILE_PATH, "w", encoding="utf-8") as f:
+        json.dump(profile, f, indent=2)
+
     print_dimensions(profile)
 
     if profile.get("dropped"):

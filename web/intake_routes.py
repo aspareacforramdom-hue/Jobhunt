@@ -94,8 +94,12 @@ def register(app, db_path=None):
             profile = db.load_profile(conn, request.state.user["id"])
         finally:
             conn.close()
+        resume = ((profile or {}).get("resume_text") or "").strip()
         return page(request, "intake.html", spec=form_spec(load_schema()),
-                    profile=profile)
+                    profile=profile,
+                    # The length, not the text. The page needs to say
+                    # whether a CV is on file, not carry a copy of it.
+                    resume_chars=len(resume))
 
     @app.get("/intake/form-spec.txt")
     def form_spec_text(request: Request):
@@ -110,6 +114,45 @@ def register(app, db_path=None):
                 lines.append(f"      - {o}")
             lines.append("")
         return PlainTextResponse("\n".join(lines))
+
+    @app.post("/intake/resume")
+    async def upload_resume(request: Request, cv_file: UploadFile = None):
+        """
+        Store the CV text against this user's profile.
+
+        This is the whole point of the feature: until a résumé is here,
+        the scorer judges jobs against a three-sentence summary and the
+        tailor has nothing real to quote. Plain text only — parsing PDF
+        and DOCX would mean a new dependency and a new class of failure,
+        and "save as .txt" is one step for three people.
+        """
+        if cv_file is None:
+            return RedirectResponse("/intake?msg=No+file+chosen",
+                                    status_code=303)
+
+        raw = (await cv_file.read())[:200_000]
+        text = raw.decode("utf-8", errors="replace").strip()
+        if len(text) < 200:
+            return RedirectResponse(
+                "/intake?msg=" + quote("That file had almost no text in it. "
+                                       "Export your CV as plain text (.txt) "
+                                       "and try again.", safe=""),
+                status_code=303)
+
+        conn = db.connect(request.state.db_path)
+        try:
+            user_id = request.state.user["id"]
+            profile = db.load_profile(conn, user_id) or {}
+            profile["resume_text"] = text
+            db.save_profile(conn, user_id, profile)
+        finally:
+            conn.close()
+
+        return RedirectResponse(
+            "/intake?msg=" + quote(f"CV saved — {len(text):,} characters. "
+                                   f"Scoring and drafts now use it.",
+                                   safe=""),
+            status_code=303)
 
     @app.post("/intake")
     async def intake_upload(request: Request, csv_file: UploadFile = None,

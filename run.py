@@ -268,8 +268,9 @@ def cmd_discover_companies(args):
                 return
             print(f"{len(boards)} board(s) being watched:\n")
             for b in boards:
-                print(f"  {b['platform']:16} {b['slug']:24} "
-                      f"{b['jobs_seen']:4} jobs   {b['company_name'] or ''}")
+                mark = " ~loose" if b["confidence"] == "loose" else ""
+                print(f"  {b['platform']:16} {b['slug']:22} "
+                      f"{b['jobs_seen']:4} jobs  {b['company_name'] or ''}{mark}")
             return
 
         names = []

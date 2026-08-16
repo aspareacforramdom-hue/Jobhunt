@@ -13,6 +13,16 @@ TAILOR_SYSTEM = """Tailor an application for one specific role.
 
 RULES:
 - Never invent experience. Reframe real things; fabricate nothing.
+- The candidate's RÉSUMÉ is given below when they have uploaded one.
+  `bullet_swaps.replace` must quote the opening words of a bullet that
+  ACTUALLY APPEARS in it, verbatim. The user pastes these into their own
+  CV, so a bullet you invented and labelled "existing" is worse than no
+  suggestion at all.
+- If no résumé is given, return an EMPTY `bullet_swaps` list. Do not
+  guess at what their CV says. Everything else can still be written from
+  their angles and target.
+- `keywords_to_add` must be terms the résumé shows they genuinely have.
+  Without a résumé, return an empty list.
 - Lead with the candidate's unfair advantage, not their job title.
 - Cover letter: under 150 words. Nobody reads more.
 - If the candidate is a genuine stretch for this role, address it
@@ -54,6 +64,29 @@ Return ONLY JSON:
 }"""
 
 
+RESUME_CHARS = 6000
+
+
+def _resume_block(profile):
+    """
+    The candidate's own words, or an explicit statement that we do not
+    have them.
+
+    The absent case is spelled out rather than left blank on purpose. An
+    empty section reads to a model as "nothing notable here" and it
+    writes bullet swaps anyway; a sentence saying the résumé is missing
+    and that swaps must therefore be empty is followed.
+    """
+    resume = (profile.get("resume_text") or "").strip()
+    if not resume:
+        return ("CANDIDATE RÉSUMÉ: NOT PROVIDED.\n"
+                "Return an empty bullet_swaps list and an empty "
+                "keywords_to_add list. Write the cover letter and the "
+                "LinkedIn note from the angles above.")
+    return ("CANDIDATE RÉSUMÉ (quote from this, verbatim, for "
+            f"bullet_swaps.replace):\n{resume[:RESUME_CHARS]}")
+
+
 def tailor(job, profile):
     prompt = f"""ROLE:
 {job.get('title')} at {job.get('company')} — {job.get('location')}
@@ -66,6 +99,8 @@ CANDIDATE ANGLES (real, verified):
 
 CANDIDATE TARGET:
 {json.dumps(profile.get('target', {}), indent=2)}
+
+{_resume_block(profile)}
 
 Scoring notes from earlier evaluation:
   verdict: {job.get('verdict')}

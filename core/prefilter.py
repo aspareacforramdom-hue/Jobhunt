@@ -124,12 +124,18 @@ def prefilter(jobs, profile, top_n=40, min_keep=20,
         ceiling = None
 
     phrases, tokens = _wanted(profile)
-    if not phrases and not semantic.available():
-        # _title_signal scores 0 against an empty vocabulary, so every
-        # listing is dropped. That is the right call — scoring the whole
-        # market for someone with no stated target is how you spend a
-        # month's budget in one scan — but it used to happen in silence,
-        # and an empty board looks identical to a quiet market.
+    if not phrases:
+        # Neither ranker can work without a stated target: the keyword
+        # path scores 0 against an empty vocabulary and the semantic one
+        # has nothing to embed. Dropping everything is the right call —
+        # scoring the whole market for someone with no target is how you
+        # spend a month's budget in one scan — but it must not happen in
+        # silence, because an empty board looks exactly like a quiet
+        # market.
+        #
+        # This guard briefly checked `and not semantic.available()`,
+        # which meant that on any machine with the model installed the
+        # message stopped printing and the silence came back.
         print("→ prefilter: this profile names no role, no alt titles and "
               "no search terms, so nothing can match. Run `run.py "
               "calibrate`, or re-run intake.")

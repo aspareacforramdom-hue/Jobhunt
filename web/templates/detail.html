@@ -79,6 +79,13 @@
     {% else %}
       <p class="prose muted">No angle was recorded for this one.</p>
     {% endif %}
+    {% if job.evidence %}
+      {# Drawn from the CV rather than from the intake summary — the
+         difference between "you'd be good at this" and "here is the
+         line on your CV that proves it". #}
+      <p class="note mt-2">
+        From your CV — “{{ job.evidence }}”</p>
+    {% endif %}
     {% if job.verdict %}
       <p class="prose mt-2" style="color: var(--ink-2)">{{ job.verdict }}</p>
     {% endif %}

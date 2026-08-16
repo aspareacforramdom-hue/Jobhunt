@@ -50,9 +50,22 @@
       <span class="label">02</span>
       <h2>CV bullet swaps</h2>
     </div>
-    <p class="note prose" style="margin-bottom: 1rem">
-      Copy each one individually. Nothing here invents experience — these
-      reword what is already on your CV for this specific role.</p>
+    {# The old copy promised "these reword what is already on your CV"
+       unconditionally, while the tailoring prompt had never been given
+       the CV — so the model invented bullets and this line presented
+       them as the user's own. The claim is now only made when it is
+       true. #}
+    {% if has_resume %}
+      <p class="note prose" style="margin-bottom: 1rem">
+        Copy each one individually. Nothing here invents experience —
+        these reword lines already on your CV for this specific role.</p>
+    {% else %}
+      <p class="note prose" style="margin-bottom: 1rem">
+        No CV on file, so there is nothing to rewrite. Upload one on
+        <a href="/intake" class="linklike">the intake page</a> and this
+        section will quote your own bullets back at you instead of
+        guessing at them.</p>
+    {% endif %}
 
     {% set swaps = t.bullet_swaps or [] %}
     {% if swaps %}

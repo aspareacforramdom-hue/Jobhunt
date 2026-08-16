@@ -201,10 +201,14 @@ def register(app, db_path=None):
             if not job or not application:
                 return RedirectResponse("/applications?msg=Not+prepared+yet",
                                         status_code=303)
+            # Only the fact, never the text — the page must not carry a
+            # copy of someone's CV around just to decide on a sentence.
+            profile = db.load_profile(conn, user_id) or {}
+            has_resume = bool((profile.get("resume_text") or "").strip())
         finally:
             conn.close()
         return page(request, "prepare.html", job=job,
-                    application=application)
+                    application=application, has_resume=has_resume)
 
     @app.get("/applications")
     def applications(request: Request):

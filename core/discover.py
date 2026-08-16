@@ -798,10 +798,18 @@ def discover_all(sources, dry=False):
                       f"({'first deep run' if seeding else 'daily'}, "
                       f"{len(li_terms)} keywords, ~${cost:.2f})...")
                 before = len(rows)
+                before = len(rows)
                 rows += from_linkedin(li_cfg, li_terms, locs,
                                       sources.get("linkedin_filters"), seeding)
                 spent += cost
-                li_cfg["_seeded_terms"] = list(li_terms)
+                # Only a run that actually came back counts as seeded.
+                # Marking them regardless meant a network error during
+                # the one deep pass lost it permanently: every later run
+                # then asked a 24-hour window for a keyword whose 30-day
+                # history had never been fetched. Naukri gets this right
+                # by recording inside its loop, after the response.
+                if len(rows) > before:
+                    li_cfg["_seeded_terms"] = list(li_terms)
                 notes.append(f"LinkedIn: {len(rows) - before} listings, "
                              f"~${cost:.2f}")
         else:

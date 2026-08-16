@@ -87,8 +87,18 @@ def slug_variants(name):
     out = [joined]
     if len(words) > 1:
         out.append("-".join(words))
-        # Many Indian firms are known by their first word alone
-        # (Swiggy Technologies -> swiggy).
+        # The bare first word, LAST and marked loose when it is what hit.
+        #
+        # It genuinely finds companies — "Zeta Suite" resolves to the
+        # `zeta` board on Lever, 22 live roles, verified. But it also
+        # turns "Tata Consumer Products" into `tata` and "Meta Platforms"
+        # into `meta`, which on any given platform may be an entirely
+        # different employer.
+        #
+        # So it is tried only after the specific spellings miss, and a
+        # board found this way is recorded with confidence "loose" so a
+        # human can glance at it. Neither silently trusted nor silently
+        # lost.
         if len(words[0]) > 3:
             out.append(words[0])
     seen, unique = set(), []
@@ -143,21 +153,47 @@ def resolve(names, workers=PROBE_WORKERS, timeout=12):
     answered with live roles. A company on two platforms yields two
     entries; that happens, and both are worth fetching.
     """
-    tasks = [(name, slug) for name in names for slug in slug_variants(name)]
-    if not tasks:
+    named = [(name, slug_variants(name)) for name in names]
+    named = [(n, v) for n, v in named if v]
+    if not named:
+        return []
+
+    def first_hit(entry):
+        """
+        Probe one company's spellings MOST SPECIFIC FIRST and stop at the
+        first that answers.
+
+        Not an optimisation — a correctness fix. Probing every variant
+        and keeping every hit meant "Tata Consumer Products" recorded a
+        board under the slug `tata`, and `tata` on a given platform may
+        belong to an entirely different Tata company. The same applies to
+        `meta`, `apple`, `reliance`: a generic first word is a different
+        employer's board, and once recorded it feeds every future scan.
+        Stopping at the most specific match that works removes the whole
+        class of mistake.
+        """
+        name, variants = entry
+        # The bare first word, when there is one, is always the last
+        # variant. A hit on it is the only ambiguous outcome.
+        loose_slug = variants[-1] if len(variants) > 2 else None
+        for slug in variants:
+            hits = probe_slug(slug, timeout)
+            if hits:
+                confidence = "loose" if slug == loose_slug else "exact"
+                return [{"name": name, "platform": p, "slug": slug,
+                         "jobs": n, "confidence": confidence}
+                        for p, n in hits]
         return []
 
     results, claimed = [], set()
-    with ThreadPoolExecutor(max_workers=min(workers, len(tasks))) as pool:
-        probed = pool.map(lambda t: (t, probe_slug(t[1], timeout)), tasks)
-        for (name, slug), hits in probed:
-            for platform, jobs in hits:
-                key = (platform, slug)
+    with ThreadPoolExecutor(max_workers=min(workers, len(named))) as pool:
+        for found in pool.map(first_hit, named):
+            for row in found:
+                key = (row["platform"], row["slug"])
                 if key in claimed:
                     continue
                 claimed.add(key)
-                results.append({"name": name, "platform": platform,
-                                "slug": slug, "jobs": jobs})
+                results.append(row)
     results.sort(key=lambda r: -r["jobs"])
     return results
 
@@ -238,6 +274,11 @@ def discover_for_user(conn, user_id, profile, limit=50, extra_names=()):
     boards = resolve(names)
     for b in boards:
         db.save_job_board(conn, b["platform"], b["slug"], b["name"],
-                          b["jobs"], user_id)
+                          b["jobs"], user_id, b.get("confidence", "exact"))
+    loose = [b for b in boards if b.get("confidence") == "loose"]
     print(f"  [companies] {len(boards)} live boards found")
+    if loose:
+        print(f"  [companies] {len(loose)} matched only on a shortened name "
+              f"— worth a glance: "
+              f"{', '.join(b['slug'] for b in loose)}")
     return boards

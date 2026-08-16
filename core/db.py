@@ -174,8 +174,8 @@ def save_profile(conn, user_id, profile):
     conn.execute(
         "INSERT INTO profiles (user_id, target_json, hard_filters_json, "
         "weights_json, dimension_definitions_json, angles_json, "
-        "search_terms_json, dropped_json, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?) "
+        "search_terms_json, dropped_json, updated_at, resume_text) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(user_id) DO UPDATE SET "
         "target_json=excluded.target_json, "
         "hard_filters_json=excluded.hard_filters_json, "
@@ -184,12 +184,16 @@ def save_profile(conn, user_id, profile):
         "angles_json=excluded.angles_json, "
         "search_terms_json=excluded.search_terms_json, "
         "dropped_json=excluded.dropped_json, "
-        "updated_at=excluded.updated_at",
+        "updated_at=excluded.updated_at, "
+        # COALESCE, so saving a profile without a CV — which every
+        # intake-form upload does — never wipes a CV already stored.
+        "resume_text=COALESCE(excluded.resume_text, profiles.resume_text)",
         (user_id, _j(profile.get("target", {})),
          _j(profile.get("hard_filters", {})), _j(profile.get("weights", {})),
          _j(profile.get("dimension_definitions", {})),
          _j(profile.get("angles", [])), _j(profile.get("search_terms", [])),
-         _j(profile.get("dropped", [])), now()))
+         _j(profile.get("dropped", [])), now(),
+         (profile.get("resume_text") or None)))
     conn.commit()
     return profile
 
@@ -207,6 +211,7 @@ def load_profile(conn, user_id):
         "angles": _unj(r["angles_json"], []),
         "search_terms": _unj(r["search_terms_json"], []),
         "dropped": _unj(r["dropped_json"], []),
+        "resume_text": r["resume_text"],
         "updated_at": r["updated_at"],
     }
 
@@ -291,18 +296,20 @@ def upsert_user_job(conn, user_id, job_id, scored):
     """Write one user's opinion of a job. Never touches another user's."""
     conn.execute(
         "INSERT INTO user_jobs (user_id, job_id, score, verdict, angle, "
-        "risk, stretch, score_breakdown_json, status, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,'new',?) "
+        "risk, stretch, score_breakdown_json, evidence, status, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,'new',?) "
         "ON CONFLICT(user_id, job_id) DO UPDATE SET "
         "score=excluded.score, verdict=excluded.verdict, "
         "angle=excluded.angle, risk=excluded.risk, "
         "stretch=excluded.stretch, "
         "score_breakdown_json=excluded.score_breakdown_json, "
+        "evidence=excluded.evidence, "
         "updated_at=excluded.updated_at",
         (user_id, job_id, scored.get("score"), scored.get("verdict"),
          scored.get("angle"), scored.get("risk"),
          int(bool(scored.get("stretch"))),
-         _j(scored.get("score_breakdown", {})), now()))
+         _j(scored.get("score_breakdown", {})),
+         scored.get("evidence") or None, now()))
     conn.commit()
 
 
@@ -315,7 +322,7 @@ _JOB_COLS = "j.id, j.url, j.title, j.company, j.location, j.source, j.found_at"
 
 _JOIN_TAIL = """
          uj.score, uj.verdict, uj.angle, uj.risk, uj.stretch,
-         uj.score_breakdown_json, uj.status, uj.ignored_reason,
+         uj.score_breakdown_json, uj.evidence, uj.status, uj.ignored_reason,
          uj.ignored_at, uj.updated_at,
          c.rating AS company_rating, c.review_count AS company_review_count,
          c.review_summary_json
@@ -600,7 +607,7 @@ def set_setting(conn, key, value):
 # Job boards  (discovered by probing — shared, like `jobs`)
 # ------------------------------------------------------------
 def save_job_board(conn, platform, slug, company_name=None, jobs_seen=0,
-                   found_for=None):
+                   found_for=None, confidence="exact"):
     """
     Record a board that answered with live roles.
 
@@ -611,14 +618,14 @@ def save_job_board(conn, platform, slug, company_name=None, jobs_seen=0,
     """
     conn.execute(
         "INSERT INTO job_boards (platform, slug, company_name, jobs_seen, "
-        "found_for, enabled, discovered_at, last_seen_at) "
-        "VALUES (?,?,?,?,?,1,?,?) "
+        "found_for, enabled, discovered_at, last_seen_at, confidence) "
+        "VALUES (?,?,?,?,?,1,?,?,?) "
         "ON CONFLICT(platform, slug) DO UPDATE SET "
         "company_name=COALESCE(excluded.company_name, "
         "job_boards.company_name), "
         "jobs_seen=excluded.jobs_seen, last_seen_at=excluded.last_seen_at",
         (platform, slug, company_name, int(jobs_seen or 0), found_for,
-         now(), now()))
+         now(), now(), confidence))
     conn.commit()
 
 

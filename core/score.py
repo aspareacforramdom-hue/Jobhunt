@@ -37,6 +37,17 @@ Every listing also needs a `risk`: the strongest honest reason this
 person might NOT want to apply. If there genuinely is no meaningful
 reason, return null — but reach for null rarely.
 
+Where the candidate's RÉSUMÉ is given, judge against what it actually
+evidences, not against what the listing asks for in the abstract. Their
+`angles` are a summary someone wrote about them; the résumé is the
+record. When the two disagree, believe the résumé.
+
+Also return `evidence`: the single strongest concrete thing in their
+résumé that this specific employer would care about — a shipped
+product, a number, a named system. Quote or closely paraphrase the
+résumé; do not generalise it into a claim they did not make. If the
+résumé shows nothing relevant, return null, and let that be visible.
+
 Return ONLY a JSON array. No preamble, no markdown fences.
 Each element:
 {
@@ -45,8 +56,17 @@ Each element:
   "verdict": "<one blunt sentence — why this does or doesn't move them forward>",
   "stretch": <true if above their current level>,
   "angle": "<the single strongest line for their application note>",
-  "risk": "<the strongest honest reason against applying, or null>"
+  "risk": "<the strongest honest reason against applying, or null>",
+  "evidence": "<the strongest concrete thing in their résumé this
+                employer would care about, or null>"
 }"""
+
+# A résumé is a few thousand characters. Sent whole, in the cached
+# system block, it is paid for once per scan and read back by every
+# batch after that at a tenth of the price — so the marginal cost of
+# giving the scorer the whole document instead of a summary is close to
+# nothing. Truncated only to bound a pathological upload.
+RESUME_CHARS = 6000
 
 
 def _system(profile):
@@ -64,13 +84,27 @@ def _system(profile):
     defs = dimensions.definitions_for(profile)
     spec = {d: {"weight_pct": weights.get(d), "means": defs[d]} for d in defs}
 
+    # The résumé belongs HERE, inside the cached prefix, and not in the
+    # per-batch message: it is identical for every batch in a scan, so
+    # putting it here costs one cache write and then ~a tenth of the
+    # price on every batch after. In the volatile half it would be
+    # re-billed at full price twenty-five times per user per scan.
+    resume = (profile.get("resume_text") or "").strip()
+    resume_block = (
+        f"\n\nTHEIR RÉSUMÉ — the record, and the thing to judge against:\n"
+        f"{resume[:RESUME_CHARS]}"
+        if resume else
+        "\n\nTHEIR RÉSUMÉ: not provided. Score on the target profile "
+        "alone, return null for `evidence`, and do not guess at what "
+        "their experience might contain.")
+
     return f"""{SYSTEM}
 
 CANDIDATE TARGET PROFILE:
 {json.dumps(profile.get('target', {}), indent=2, sort_keys=True)}
 
 THEIR UNFAIR ADVANTAGE:
-{json.dumps(profile.get('angles', []), indent=2)}
+{json.dumps(profile.get('angles', []), indent=2)}{resume_block}
 
 SCORE EVERY LISTING ON EXACTLY THESE DIMENSIONS.
 The weights show what matters to this person. Note how low
@@ -171,6 +205,7 @@ def score_jobs(jobs, profile, batch_size=8):
                     "stretch": bool(r.get("stretch")),
                     "angle": r.get("angle", ""),
                     "risk": r.get("risk") or None,
+                    "evidence": r.get("evidence") or None,
                     "weakest": dimensions.weakest(breakdown, weights),
                 })
                 scored.append(j)
