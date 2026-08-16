@@ -103,6 +103,33 @@ def live_server(tmp_path_factory):
     server.should_exit = True
 
 
+_FONT_HOSTS = ("fonts.googleapis.com", "fonts.gstatic.com")
+
+
+def _is_third_party_font(url):
+    return any(h in (url or "") for h in _FONT_HOSTS)
+
+
+def _font_cdn_reachable(timeout=5):
+    """
+    Can this machine actually fetch the typefaces?
+
+    Asked only when a font is missing, so the normal path costs nothing
+    and the answer distinguishes "the stylesheet is broken" from "this
+    runner cannot reach Google".
+    """
+    import urllib.error
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            "https://fonts.googleapis.com/css2?family=Newsreader&display=swap",
+            headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status == 200
+    except (urllib.error.URLError, OSError):
+        return False
+
+
 @pytest.fixture(scope="module")
 def page(live_server):
     with sync_playwright() as p:
@@ -110,10 +137,29 @@ def page(live_server):
         ctx = browser.new_context(viewport={"width": 1400, "height": 900})
         pg = ctx.new_page()
 
+        # Errors are recorded with WHERE they came from, because not all
+        # console noise is ours. The stylesheet pulls three typefaces
+        # from Google's CDN, and a shared CI runner hitting that CDN gets
+        # rate-limited: the first run of this suite on GitHub Actions
+        # logged 36 font 404s and turned a green suite red without a
+        # single thing wrong in the application.
+        #
+        # Filtering by origin rather than loosening the assertion keeps
+        # the test able to do its actual job — catching OUR broken
+        # scripts and OUR missing assets — which a blanket "ignore 404s"
+        # would have thrown away.
         pg.errors = []
+
+        def _console(m):
+            if m.type != "error":
+                return
+            where = (m.location or {}).get("url", "") or ""
+            if _is_third_party_font(where):
+                return
+            pg.errors.append(f"{m.text}  [{where or 'inline'}]")
+
         pg.on("pageerror", lambda e: pg.errors.append(str(e)))
-        pg.on("console", lambda m: pg.errors.append(m.text)
-              if m.type == "error" else None)
+        pg.on("console", _console)
 
         pg.goto(f"{live_server}/login")
         pg.fill("input[name=username]", "alice")
@@ -129,8 +175,24 @@ def page(live_server):
 # The design system actually resolved
 # ------------------------------------------------------------
 def test_the_three_fonts_load(page):
+    """
+    The typefaces carry the whole design, so a silent fallback to a
+    system stack is a real regression worth catching.
+
+    But they come from a third-party CDN, which makes a hard assertion
+    here a bet on Google's availability and on this machine's rate
+    limit. CI proved the point immediately: `Newsreader` alone failed to
+    arrive on a shared runner while the other two were fine.
+
+    So the check stays strict where the network cooperates and skips
+    where it does not — never a silent pass, and never a red build for
+    something the application did not do.
+    """
     missing = page.evaluate("""() => ['Fraunces','Newsreader','IBM Plex Mono']
         .filter(f => !document.fonts.check('16px "' + f + '"'))""")
+    if missing and not _font_cdn_reachable():
+        pytest.skip(f"font CDN unreachable from here; could not verify "
+                    f"{missing}")
     assert missing == [], f"fonts fell back to a system stack: {missing}"
 
 
