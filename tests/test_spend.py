@@ -23,7 +23,7 @@ Every test below pins one of those five back down.
 import pytest
 import yaml
 
-from core import db, discover, scheduler, session
+from core import db, discover, scheduler
 
 CFG = yaml.safe_load(open("config/sources.yml", encoding="utf-8"))
 
