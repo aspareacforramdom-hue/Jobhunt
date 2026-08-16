@@ -373,13 +373,63 @@ def cmd_log(args):
 
 
 def cmd_review(args):
-    profile = intake.load_profile()
-    if not profile:
-        print("No profile yet.")
+    """
+    Diagnose a search from what actually happened, and optionally
+    re-weight the scorer.
+
+        run.py review --user alice
+        run.py review --user alice --apply
+
+    Reads outcomes from the DATABASE — every "I've applied", rejection
+    and interview the portal has been recording. That signal existed all
+    along and nothing consumed it: this module only ever read the
+    single-user JSON file, so the scorer's behaviour was identical in
+    week ten and week one.
+
+    `--apply` is deliberately opt-in. Re-weighting silently changes what
+    every future board shows, and that should follow reading the
+    diagnosis, not precede it.
+    """
+    if "--user" not in args:
+        # The JSON-era path, kept for the single-user CLI.
+        profile = intake.load_profile()
+        if not profile:
+            print("No profile yet. Use --user NAME for a portal account.")
+            return
+        r = feedback.review(profile)
+        if r and "--apply" in args:
+            feedback.apply_adjustments(profile, r)
         return
-    r = feedback.review(profile)
-    if r and "--apply" in args:
-        feedback.apply_adjustments(profile, r)
+
+    username = args[args.index("--user") + 1]
+    conn = db.connect()
+    try:
+        user = db.get_user_by_name(conn, username)
+        if not user:
+            print(f"No such user: {username}")
+            return
+        profile = db.load_profile(conn, user["id"])
+        if not profile:
+            print(f"{username} has no profile yet.")
+            return
+
+        outcomes = feedback.outcomes_for_user(conn, user["id"])
+        result = feedback.review(profile, data=outcomes)
+        if not result:
+            return
+
+        if "--apply" not in args:
+            print("  Re-run with --apply to update the scoring weights.\n")
+            return
+
+        # save=False: the JSON path writes data/profile.json, which is
+        # not where a portal user's profile lives.
+        feedback.apply_adjustments(profile, result, save=False)
+        db.save_profile(conn, user["id"], profile)
+        print(f"→ weights saved for {username}. The next scan scores "
+              f"against them.\n")
+    finally:
+        conn.close()
 
 
 COMMANDS = {

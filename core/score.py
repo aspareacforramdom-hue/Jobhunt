@@ -13,6 +13,7 @@ Batches jobs into one LLM call to keep cost near-zero.
 
 import json
 import math
+from concurrent.futures import ThreadPoolExecutor
 
 from core import dimensions
 from core.llm import call_llm_usage
@@ -148,7 +149,13 @@ def _clean_breakdown(raw, dim_ids):
     return out
 
 
-def score_jobs(jobs, profile, batch_size=8):
+# Concurrent batches, but not many. Each one is already eight listings,
+# the API rate-limits per organisation, and a 429 storm costs more time
+# in backoff than the concurrency saved.
+SCORE_WORKERS = 4
+
+
+def score_jobs(jobs, profile, batch_size=8, workers=SCORE_WORKERS):
     """
     Returns every job it managed to score, highest first, each with a
     per-dimension `score_breakdown` and a `score` derived from it.
@@ -156,6 +163,15 @@ def score_jobs(jobs, profile, batch_size=8):
     No minimum is applied here. Filtering is the caller's decision —
     the portal sets a relative bar from the day's actual distribution,
     which it cannot do if the scorer has already thrown work away.
+
+    THE FIRST BATCH RUNS ALONE. That is not timidity, it is what makes
+    the prompt cache work: a cache entry only becomes readable once the
+    response that wrote it has started coming back, so N simultaneous
+    first requests would each pay full price for the same system block
+    and write it N times over. Measured, the shared prefix here is most
+    of the input — running batch one, then the rest together, keeps the
+    ~90% cache discount AND collapses ~35 seconds of sequential calls
+    into roughly a quarter of that.
     """
     if not jobs:
         return []
@@ -165,10 +181,11 @@ def score_jobs(jobs, profile, batch_size=8):
     system = _system(profile)
     scored = []
     billing = {"cache_read": 0, "cache_write": 0, "fresh": 0}
+    chunks = [jobs[i:i + batch_size] for i in range(0, len(jobs), batch_size)]
 
-    for i in range(0, len(jobs), batch_size):
-        chunk = jobs[i:i + batch_size]
-
+    def run(indexed):
+        """One batch. Returns (chunk, results, usage) or (chunk, None, err)."""
+        index, chunk = indexed
         listings = [{
             "url": j["url"],
             "title": j["title"],
@@ -176,41 +193,65 @@ def score_jobs(jobs, profile, batch_size=8):
             "location": j.get("location"),
             "description": (j.get("description") or "")[:1500],
         } for j in chunk]
-
         try:
             results, usage = call_llm_usage(
                 system, _prompt(listings), max_tokens=4000, as_json=True,
                 cache_system=True)
-            billing["cache_read"] += usage.get("cache_read_input_tokens") or 0
-            billing["cache_write"] += usage.get(
-                "cache_creation_input_tokens") or 0
-            billing["fresh"] += usage.get("input_tokens") or 0
-            by_url = {r["url"]: r for r in results if isinstance(r, dict)}
+            return chunk, results, usage
+        except Exception as e:                              # noqa: BLE001
+            print(f"  [score] batch {index} failed: {e}")
+            return chunk, None, None
 
-            for j in chunk:
-                r = by_url.get(j["url"])
-                if not r:
-                    continue
+    def collect(chunk, results, usage):
+        if results is None:
+            return
+        billing["cache_read"] += usage.get("cache_read_input_tokens") or 0
+        billing["cache_write"] += usage.get("cache_creation_input_tokens") or 0
+        billing["fresh"] += usage.get("input_tokens") or 0
+        # Indexed with .get, and entries without a url are dropped. The
+        # model does occasionally return an object with no `url` at all,
+        # and a result that cannot be matched to a listing is useless
+        # rather than exceptional — this used to be masked by a
+        # try/except around the whole batch, which also swallowed real
+        # bugs.
+        if not isinstance(results, list):
+            return
+        by_url = {r["url"]: r for r in results
+                  if isinstance(r, dict) and r.get("url")}
 
-                raw = r.get("breakdown")
-                breakdown = _clean_breakdown(raw, dim_ids)
-                total = dimensions.weighted_total(breakdown, weights)
-                if total is None:
-                    continue
+        for j in chunk:
+            r = by_url.get(j["url"])
+            if not r:
+                continue
 
-                j.update({
-                    "score": total,
-                    "score_breakdown": breakdown,
-                    "verdict": r.get("verdict", ""),
-                    "stretch": bool(r.get("stretch")),
-                    "angle": r.get("angle", ""),
-                    "risk": r.get("risk") or None,
-                    "evidence": r.get("evidence") or None,
-                    "weakest": dimensions.weakest(breakdown, weights),
-                })
-                scored.append(j)
-        except Exception as e:
-            print(f"  [score] batch {i//batch_size} failed: {e}")
+            breakdown = _clean_breakdown(r.get("breakdown"), dim_ids)
+            total = dimensions.weighted_total(breakdown, weights)
+            if total is None:
+                continue
+
+            j.update({
+                "score": total,
+                "score_breakdown": breakdown,
+                "verdict": r.get("verdict", ""),
+                "stretch": bool(r.get("stretch")),
+                "angle": r.get("angle", ""),
+                "risk": r.get("risk") or None,
+                "evidence": r.get("evidence") or None,
+                "weakest": dimensions.weakest(breakdown, weights),
+            })
+            scored.append(j)
+
+    # Batch one alone, to write the cache the rest will read.
+    collect(*run((0, chunks[0])))
+
+    rest = list(enumerate(chunks[1:], start=1))
+    if rest:
+        with ThreadPoolExecutor(max_workers=min(workers, len(rest))) as pool:
+            # collect() runs here on the main thread as results arrive,
+            # so `scored` and `billing` are only ever touched by one
+            # thread and need no lock.
+            for chunk, results, usage in pool.map(run, rest):
+                collect(chunk, results, usage)
 
     scored.sort(key=lambda x: -x["score"])
     print(f"→ scored {len(scored)} of {len(jobs)} "

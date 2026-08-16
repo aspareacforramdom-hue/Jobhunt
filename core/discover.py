@@ -198,6 +198,64 @@ def from_smartrecruiters(slug, cap=100):
     return out
 
 
+def from_workday(target, cap=100):
+    """
+    Workday boards — the largest single gap in free coverage.
+
+    Most big enterprises run Workday, and unlike the other four this one
+    is a POST with a JSON body rather than a GET, which is why it is
+    usually skipped. It is still public and unauthenticated.
+
+    `target` is "tenant/site" or "tenant/site/wd5" — read them off the
+    careers URL, which looks like:
+        https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+                ^tenant  ^wd                     ^site
+
+    Verified live: NVIDIA returns total=2000 with jobPostings carrying
+    title, locationsText, postedOn and externalPath. There is no
+    description in the list response — same trade as SmartRecruiters,
+    and the shortlister reads titles anyway.
+    """
+    parts = [p for p in str(target or "").split("/") if p]
+    if len(parts) < 2:
+        print(f"  [workday:{target}] expected 'tenant/site' — skipped")
+        return []
+    tenant, site = parts[0], parts[1]
+    wd = parts[2] if len(parts) > 2 else "wd5"
+
+    url = (f"https://{tenant}.{wd}.myworkdayjobs.com"
+           f"/wday/cxs/{tenant}/{site}/jobs")
+    body = json.dumps({"appliedFacets": {}, "limit": min(cap, 100),
+                       "offset": 0, "searchText": ""}).encode()
+    out = []
+    try:
+        req = urllib.request.Request(url, data=body, headers={
+            "content-type": "application/json",
+            "accept": "application/json",
+            "User-Agent": "careerloop/1.0"})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            payload = json.loads(r.read().decode())
+
+        for j in payload.get("jobPostings", []) or []:
+            path = j.get("externalPath")
+            title = j.get("title")
+            if not path or not title:
+                continue
+            out.append({
+                "title": title,
+                "company": tenant,
+                "location": j.get("locationsText"),
+                "url": (f"https://{tenant}.{wd}.myworkdayjobs.com"
+                        f"/en-US/{site}{path}"),
+                "description": "",
+                "source": "workday",
+                "found_at": _now(),
+            })
+    except Exception as e:
+        print(f"  [workday:{tenant}] {e}")
+    return out
+
+
 def from_workable(slug):
     """
     Workable boards. Free and no auth — the account endpoint answers, but
@@ -713,7 +771,8 @@ def _fetch_ats(ats):
             + [(from_ashby, s) for s in ats.get("ashby", []) or []]
             + [(from_smartrecruiters, s)
                for s in ats.get("smartrecruiters", []) or []]
-            + [(from_workable, s) for s in ats.get("workable", []) or []])
+            + [(from_workable, s) for s in ats.get("workable", []) or []]
+            + [(from_workday, s) for s in ats.get("workday", []) or []])
     if not jobs:
         return []
 

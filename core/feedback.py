@@ -51,8 +51,44 @@ def _save(data):
         json.dump(data, f, indent=2)
 
 
-def stats():
-    data = _load()
+def outcomes_for_user(conn, user_id):
+    """
+    What actually happened, read from the database rather than the
+    JSON file this module was written against.
+
+    The portal has recorded progress in `user_jobs.status` all along —
+    every "I've applied", every rejection, every interview — and none of
+    it reached this module, because nothing ever called it with anything
+    but the single-user file. That is the loop that was never closed.
+
+    `applications.outcome` is preferred where it exists, since it is the
+    explicitly logged answer; the board status is the fallback, and for
+    most rows it is the only record there is.
+    """
+    rows = conn.execute(
+        "SELECT j.url, uj.status, uj.updated_at, "
+        "       a.outcome, a.outcome_note "
+        "  FROM user_jobs uj "
+        "  JOIN jobs j ON j.id = uj.job_id "
+        "  LEFT JOIN applications a "
+        "         ON a.job_id = uj.job_id AND a.user_id = uj.user_id "
+        " WHERE uj.user_id = ? AND (uj.status != 'new' OR a.outcome IS NOT NULL)"
+        " ORDER BY uj.updated_at", (user_id,)).fetchall()
+
+    out = []
+    for r in rows:
+        status = r["outcome"] or r["status"]
+        if status not in VALID:
+            # "interested", "prepared" and "ignored" are states of mind,
+            # not outcomes. Counting them as applications would make the
+            # callback rate look far worse than it is.
+            continue
+        out.append({"url": r["url"], "status": status,
+                    "note": r["outcome_note"] or "", "at": r["updated_at"]})
+    return out
+
+
+def stats_from(data):
     c = Counter(d["status"] for d in data)
     applied = c["applied"] + c["no_response"] + c["rejected"] + \
               c["screening"] + c["interview"] + c["offer"]
@@ -60,6 +96,11 @@ def stats():
     rate = (positive / applied * 100) if applied else 0
     return {"counts": dict(c), "applied": applied,
             "positive": positive, "callback_rate": round(rate, 1)}
+
+
+def stats():
+    """The JSON-era entry point, kept so the old CLI path still works."""
+    return stats_from(_load())
 
 
 REVIEW_SYSTEM = """Diagnose why a job search is or isn't working.
@@ -87,9 +128,13 @@ Return ONLY JSON:
 }"""
 
 
-def review(profile):
-    data = _load()
-    s = stats()
+def review(profile, data=None):
+    """
+    Diagnose the search. `data` comes from outcomes_for_user() when a
+    database is in play, and from the JSON file otherwise.
+    """
+    data = _load() if data is None else data
+    s = stats_from(data)
 
     if s["applied"] < 5:
         print(f"\n  Only {s['applied']} applications logged. "

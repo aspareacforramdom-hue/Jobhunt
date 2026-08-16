@@ -55,22 +55,33 @@ ats_targets:
     - navi
     - atlan
 
-  # Two more free, no-auth ATS platforms. Same deal as the three above:
-  # find the careers page, take the slug from the URL.
+  # Three more free, no-auth platforms. Same deal as the three above:
+  # find the careers page and take the slug out of the URL.
   #   jobs.smartrecruiters.com/SLUG   ->  smartrecruiters
   #   apply.workable.com/SLUG         ->  workable
   #
-  # Empty by default because a slug has to be verified to be worth
-  # anything — a wrong one logs a line and is skipped, but a right one
-  # is free coverage forever. Add the Indian employers you care about.
-  # Both verified live: probing the public endpoint returned real jobs.
-  # swiggy is the interesting one — Firecrawl was being PAID to scrape
-  # careers.swiggy.com and returned 0 listings on every measured scan,
-  # while Swiggy publishes its whole board on this free API.
+  # A wrong slug logs one line and is skipped; a right one is free
+  # coverage forever. `run.py discover-companies` fills these in by
+  # probing, so hand-editing is the exception now rather than the rule.
+  #
+  # Both entries below were verified live. swiggy is the instructive
+  # one: Firecrawl was being PAID to scrape careers.swiggy.com and
+  # returned 0 listings on every measured scan, because that page is a
+  # JavaScript shell — while Swiggy publishes its whole board here.
   smartrecruiters:
     - swiggy          # 46 live jobs, free (was: 0 via paid Firecrawl)
     - freshworks      # 153 live jobs, free
   workable: []
+
+  # Workday reaches the large enterprises none of the others do, and is
+  # the only platform here needing more than a slug — it is a POST with
+  # a JSON body, which is why it usually gets skipped. Read tenant, wd
+  # number and site off the careers URL:
+  #   https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+  #           ^tenant  ^wd                 ^site
+  # gives:  nvidia/NVIDIAExternalCareerSite/wd5
+  # (verified live — that tenant alone advertises 2,000 roles)
+  workday: []
 
 # LAYER B2: Firecrawl Cloud — the long tail.
 # Covers what neither the ATS JSON nor Apify reaches: job boards this
