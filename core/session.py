@@ -77,21 +77,42 @@ def get_secret():
     if env:
         return env.encode("utf-8")
 
-    if os.path.exists(SECRET_PATH):
-        with open(SECRET_PATH, "rb") as f:
-            key = f.read().strip()
-            if key:
-                return key
+    key = _read_secret()
+    if key:
+        return key
 
-    key = secrets.token_hex(32).encode("ascii")
+    # Created exclusively, so that exactly one caller can win.
+    #
+    # The portal answers requests on several threads and starts a boot
+    # scan on another, all of which reach this within the same few
+    # milliseconds on a first run. Plain "check then write" let two of
+    # them generate different keys and both write: whoever wrote second
+    # invalidated the cookie the first had just issued, and that user
+    # was bounced back to the sign-in page with no explanation.
     os.makedirs(os.path.dirname(SECRET_PATH) or ".", exist_ok=True)
-    with open(SECRET_PATH, "wb") as f:
-        f.write(key)
+    fresh = secrets.token_hex(32).encode("ascii")
+    try:
+        fd = os.open(SECRET_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        # Someone else got there first. Theirs is the real key.
+        return _read_secret() or fresh
+    try:
+        os.write(fd, fresh)
+    finally:
+        os.close(fd)
     try:
         os.chmod(SECRET_PATH, 0o600)
     except OSError:
         pass                       # best effort; Windows ACLs differ
-    return key
+    return fresh
+
+
+def _read_secret():
+    try:
+        with open(SECRET_PATH, "rb") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
 
 
 # ------------------------------------------------------------

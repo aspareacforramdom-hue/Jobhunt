@@ -34,8 +34,23 @@ def local_date(value):
     return ts.astimezone(db.IST).strftime("%d %b") if ts else ""
 
 
+def safe_url(value):
+    """
+    Only http(s) links reach an href.
+
+    Every URL on these pages is scraped, or invented by an LLM in the
+    outreach step. Jinja escapes quotes, so a hostile value cannot break
+    out of the attribute — but `javascript:` needs no quotes to run, and
+    the user clicking it is the whole point of the link. Anything that
+    isn't plainly http or https renders as a dead anchor instead.
+    """
+    text = str(value or "").strip()
+    return text if text[:7].lower() in ("http://", "https:/") else ""
+
+
 templates.env.filters["ago"] = ago
 templates.env.filters["local_date"] = local_date
+templates.env.filters["safe_url"] = safe_url
 
 
 def page(request, name, **context):

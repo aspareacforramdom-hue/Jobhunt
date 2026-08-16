@@ -96,19 +96,36 @@ def test_six_debug_restarts_produce_at_most_one_scan(conn, user):
 
 
 def test_past_the_debounce_but_before_a_slot_still_does_not_scan(conn, user):
-    """3h is a floor, not a trigger. A slot must also have passed."""
-    now = datetime.now(db.IST)
-    # Land in a window with no slot crossing: 4h ago, same day, and
-    # skip the assertion entirely if a slot genuinely fell in between.
-    finished = now - timedelta(hours=4)
-    if slots_between(finished, now):
-        pytest.skip("a real slot fell inside the window at this clock time")
+    """
+    3h is a floor, not a trigger. A slot must also have passed.
+
+    Pinned to a fixed clock: the state being tested only exists at
+    certain hours of a real day, so this used to skip itself whenever a
+    07:00 or 18:00 slot happened to fall in the last four hours — about
+    a third of the day, and precisely the hours when the slot logic is
+    doing something.
+    """
+    now = datetime(2026, 5, 20, 13, 0, tzinfo=db.IST)   # 07:00 done, 18:00 to come
+    finished = now - timedelta(hours=4)                 # 09:00, no slot between
+    assert slots_between(finished, now) == []
 
     _completed_run(conn, user, finished)
-    decision = Scanner().decide(conn)
+    decision = Scanner().decide(conn, now=now)
 
     assert decision["due"] is False
     assert "no slot has passed" in decision["reason"]
+
+
+def test_a_slot_crossed_since_the_last_scan_does_trigger(conn, user):
+    """The other half of the same rule, on the same fixed clock."""
+    now = datetime(2026, 5, 20, 20, 0, tzinfo=db.IST)   # past the 18:00 slot
+    finished = now - timedelta(hours=4)                 # 16:00, before it
+
+    _completed_run(conn, user, finished)
+    decision = Scanner().decide(conn, now=now)
+
+    assert decision["due"] is True
+    assert "slot(s) missed" in decision["reason"]
 
 
 def test_cooldown_reports_time_remaining(conn, user):
@@ -257,7 +274,13 @@ def test_dry_mode_scores_nothing_and_sends_nothing(tmp_path, monkeypatch):
     Scanner(db_path=path, dry=True)._scan(conn, "catchup")
 
     assert db.list_user_jobs(conn, uid) == []
-    assert db.recent_runs(conn, uid)[0]["status"] == "ok"
+
+    # Recorded, so the run is visible — but not as a success. A dry run
+    # that satisfied last_successful_run started the 3-hour cooldown and
+    # blocked the real scan it was supposed to be rehearsing.
+    assert db.recent_runs(conn, uid)[0]["status"] == "dry"
+    assert db.last_successful_run(conn, uid) is None
+    assert Scanner(db_path=path).cooldown_remaining(conn) == 0
     conn.close()
 
 

@@ -22,6 +22,7 @@ each user is wrapped separately. If user B's scoring throws, A and C
 still finish and B gets an error row in `runs`.
 """
 
+import json
 import os
 import threading
 import traceback
@@ -74,6 +75,90 @@ def slots_between(start, end, lookback_days=LOOKBACK_DAYS):
     return out
 
 
+ROTATION_KEY = "paid_search_term_offset"
+
+
+def _rotate_terms(conn, terms, per_scan):
+    """
+    The next slice of search terms for the tier that charges per search.
+
+    Three people between them have eighteen keywords and one scan can
+    afford about six. Always taking the first six means the other twelve
+    are never searched — one person's job hunt silently funded by
+    everyone else's alphabetical luck. So the window walks forward and
+    wraps, and the position survives a restart.
+
+    Returns every term when there is no cap, which is what the free
+    tiers get.
+    """
+    if not terms:
+        return []
+    try:
+        per_scan = int(per_scan)
+    except (TypeError, ValueError):
+        per_scan = 0
+    if per_scan <= 0 or per_scan >= len(terms):
+        return list(terms)
+
+    try:
+        offset = int(db.get_setting(conn, ROTATION_KEY, 0) or 0) % len(terms)
+    except (ValueError, TypeError):
+        offset = 0
+
+    doubled = list(terms) + list(terms)
+    slice_ = doubled[offset:offset + per_scan]
+    db.set_setting(conn, ROTATION_KEY, (offset + per_scan) % len(terms))
+    return slice_
+
+
+def _merge_discovered_boards(conn, sources):
+    """
+    Fold probed boards into the hand-written ones from sources.yml.
+
+    Config wins on conflict in the sense that a slug written by hand is
+    never dropped — the two lists are unioned, not replaced. Someone who
+    typed a company in still gets it even if probing never surfaced it,
+    and discovery can only ever add coverage.
+    """
+    ats = sources.setdefault("ats_targets", {})
+    added = 0
+    for row in db.list_job_boards(conn):
+        current = ats.setdefault(row["platform"], []) or []
+        if row["slug"] not in current:
+            current.append(row["slug"])
+            ats[row["platform"]] = current
+            added += 1
+    if added:
+        print(f"→ {added} discovered board(s) added to this scan")
+    return added
+
+
+def _seeded_terms(conn, key=None):
+    """Keywords that have already had their one deep first pass."""
+    raw = db.get_setting(conn, key or discover.BACKFILL_KEY)
+    try:
+        seeded = json.loads(raw) if raw else []
+    except (TypeError, ValueError):
+        return []
+    return seeded if isinstance(seeded, list) else []
+
+
+def _remember_seeded(conn, terms, key=None):
+    """
+    Add newly seeded keywords to the permanent record.
+
+    Kept in the database rather than in memory because the whole value
+    of the deep pass is that it happens ONCE. A restart that forgot this
+    would re-buy a month of history for every keyword, which is the
+    single most expensive thing this tool can do.
+    """
+    if not terms:
+        return
+    key = key or discover.BACKFILL_KEY
+    merged = sorted(set(_seeded_terms(conn, key)) | set(terms))
+    db.set_setting(conn, key, json.dumps(merged))
+
+
 class Scanner:
     """Owns the decision, the lock, and the live status the header polls."""
 
@@ -92,10 +177,19 @@ class Scanner:
     # ------------------------------------------------------------
     # Decision
     # ------------------------------------------------------------
-    def decide(self, conn):
-        """Is a catch-up scan due? Returns {'due': bool, 'reason': str}."""
+    def decide(self, conn, now=None):
+        """
+        Is a catch-up scan due? Returns {'due': bool, 'reason': str}.
+
+        `now` is a seam for the tests and nothing else. The state this
+        answers about — past the debounce, but before any slot — only
+        exists at certain hours of the real day, so a test pinned to the
+        wall clock had to skip itself for roughly a third of the day,
+        including the hours around the slots where the logic matters
+        most. Production never passes it.
+        """
         last = db.last_successful_run(conn)
-        now = datetime.now(db.IST)
+        now = now or datetime.now(db.IST)
 
         if not last:
             return {"due": True, "reason": "no successful scan on record"}
@@ -178,13 +272,29 @@ class Scanner:
                                 "found": 0, "kind": kind, "error": None,
                                 "notes": []})
 
-        self._thread = threading.Thread(target=self._run, args=(kind,),
-                                        daemon=True)
-        self._thread.start()
+        # `running` is already True at this point, so a thread that never
+        # starts — the process is out of threads, or the interpreter is
+        # shutting down — would wedge the scanner as permanently busy,
+        # with the only cure being a restart. Hand the flag back.
+        try:
+            self._thread = threading.Thread(target=self._run, args=(kind,),
+                                            daemon=True)
+            self._thread.start()
+        except RuntimeError as e:
+            self._set(running=False, phase="failed", error=str(e))
+            return False, f"Could not start a scan thread: {e}"
         return True, "Scan started"
 
     def _run(self, kind):
-        conn = db.connect(self.db_path)
+        try:
+            conn = db.connect(self.db_path)
+        except Exception as e:                       # noqa: BLE001
+            # Opening the database is outside the try below, so a locked
+            # or unreadable file used to escape into the thread and leave
+            # `running` set forever — the same wedge as above.
+            traceback.print_exc()
+            self._set(error=str(e), phase="failed", running=False)
+            return
         try:
             self._scan(conn, kind)
         except Exception as e:
@@ -212,15 +322,40 @@ class Scanner:
             terms.update(p.get("search_terms") or [])
             locations.update(p.get("hard_filters", {}).get("locations") or [])
 
-        with open(self.sources_path) as f:
+        with open(self.sources_path, encoding="utf-8") as f:
             sources = yaml.safe_load(f) or {}
         self.sources = sources
-        sources.setdefault("jobspy", {})["search_terms"] = sorted(terms)
+        _merge_discovered_boards(conn, sources)
+        all_terms = sorted(terms)
+        sources.setdefault("jobspy", {})["search_terms"] = all_terms
         sources["jobspy"]["locations"] = sorted(locations) or \
             sources["jobspy"].get("default_locations", [])
 
+        # The free tiers search on everything; the PAID tier gets a
+        # rotating slice, because three people between them have far more
+        # keywords than one scan can afford. Taking the first N every
+        # time would mean the tail is never searched at all.
+        paid = _rotate_terms(conn, all_terms,
+                             sources.get("apify", {}).get("max_terms_per_scan"))
+        apify_cfg = sources.setdefault("apify", {})
+        apify_cfg["search_terms"] = paid
+        # Which keywords have already had their one deep seeding pass.
+        # Remembered in the database, not in this process, so a restart
+        # does not re-buy a month of history for every keyword.
+        apify_cfg["backfilled_terms"] = _seeded_terms(conn)
+
+        # LinkedIn runs once per scan with every keyword, so its slice is
+        # the whole rotation, not a share of it.
+        li_cfg = sources.setdefault("linkedin", {})
+        li_cfg["search_terms"] = paid
+        li_cfg["backfilled_terms"] = _seeded_terms(
+            conn, discover.LINKEDIN_BACKFILL_KEY)
+
         self._set(phase="searching")
         raw, notes = discover.discover_all(sources, dry=self.dry)
+        _remember_seeded(conn, apify_cfg.get("_seeded_terms"))
+        _remember_seeded(conn, li_cfg.get("_seeded_terms"),
+                         discover.LINKEDIN_BACKFILL_KEY)
         self._set(found=len(raw), notes=notes, phase="filtering")
 
         fresh = self._dedup(conn, raw)
@@ -262,7 +397,12 @@ class Scanner:
         user_id = user["id"]
         run_id = db.start_run(conn, user_id, kind)
         try:
-            candidates = prefilter.prefilter(list(fresh), profile)
+            # Each user scores a COPY. `fresh` is the shared scrape, and
+            # scoring writes its verdict onto the dicts it is handed — so
+            # passing the originals meant user B's listings arrived
+            # carrying user A's score and angle, and any listing B's
+            # batch failed to score kept A's opinion of it.
+            candidates = prefilter.prefilter([dict(j) for j in fresh], profile)
 
             # Never pay to score something this user already has an
             # opinion on.
@@ -287,10 +427,29 @@ class Scanner:
             if self.dry:
                 print(f"  [dry] {user['username']}: {len(candidates)} "
                       f"would be scored, 0 LLM calls made")
-                db.finish_run(conn, run_id, "ok", len(candidates))
+                # Recorded as `dry`, NOT as `ok`. last_successful_run
+                # drives the 3-hour cooldown, so booking a dry run as a
+                # success meant one `serve --dry` — the command you run
+                # precisely because you do not want to spend anything —
+                # suppressed real scanning for the next three hours, and
+                # the header cheerfully reported it as the last scan.
+                db.finish_run(conn, run_id, "dry", len(candidates))
                 return
 
             scored = score.score_jobs(candidates, profile)
+
+            # Candidates in, nothing out, means every batch failed —
+            # almost always a missing or rejected ANTHROPIC_API_KEY.
+            # score_jobs catches per batch so one bad batch cannot lose
+            # the rest, and the cost of that was a total failure looking
+            # identical to a quiet market: the run was booked "ok, 0
+            # found", the header went green, and the 3-hour cooldown
+            # started. Say what happened instead.
+            if candidates and not scored:
+                raise RuntimeError(
+                    f"scored 0 of {len(candidates)} candidates — every LLM "
+                    f"call failed. Check ANTHROPIC_API_KEY.")
+
             for j in scored:
                 jid = job_ids.get(j["url"])
                 if jid:
@@ -299,13 +458,21 @@ class Scanner:
 
             db.finish_run(conn, run_id, "ok", len(scored))
 
-            # Best-effort, bounded, and shared across users via the
-            # companies cache. Never allowed to fail the run.
-            try:
-                self._set(phase="fetching company reviews")
-                reviews.enrich_top_companies(conn, scored, dry=self.dry)
-            except Exception as e:
-                print(f"  [reviews] enrichment skipped: {e}")
+            # OFF during scans by default, and this is the single
+            # biggest saving available.
+            #
+            # Measured, it was two paid actor runs per company for the
+            # top ten companies PER USER — 12 companies and $7.14 on one
+            # scan, for review summaries of employers nobody had opened
+            # yet. The detail page already has a "Look up reviews"
+            # button, so the same money now buys reviews only for the
+            # companies someone actually reads about.
+            if (self.sources.get("reviews") or {}).get("enrich_during_scan"):
+                try:
+                    self._set(phase="fetching company reviews")
+                    reviews.enrich_top_companies(conn, scored, dry=self.dry)
+                except Exception as e:
+                    print(f"  [reviews] enrichment skipped: {e}")
 
             notify.send_scan_summary(user, scored, PORTAL_URL, dry=self.dry)
 

@@ -54,7 +54,7 @@ Return ONLY JSON:
 
 def calibrate(profile, force=False):
     if os.path.exists(CALIB_PATH) and not force:
-        with open(CALIB_PATH) as f:
+        with open(CALIB_PATH, encoding="utf-8") as f:
             return json.load(f)
 
     prompt = f"""Research the Indian job market for this person.
@@ -74,7 +74,7 @@ Search the web for current Indian market data. Then calibrate."""
                       as_json=True, tools=WEB_SEARCH_TOOL)
 
     os.makedirs("data", exist_ok=True)
-    with open(CALIB_PATH, "w") as f:
+    with open(CALIB_PATH, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
     return result
 

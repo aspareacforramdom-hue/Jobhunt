@@ -209,36 +209,7 @@ def _report_billing(billing):
               "works, it is just paying full price per batch.")
 
 
-def distribution(jobs):
-    """
-    Where the bar actually sits today.
-
-    A first run can score everything 5.8. A fixed cutoff would show an
-    empty board and read as "no jobs exist" rather than "the bar is
-    relative and today was flat", so the portal shows this instead.
-    """
-    scores = sorted(j["score"] for j in jobs
-                    if isinstance(j.get("score"), (int, float)))
-    if not scores:
-        return {"count": 0}
-
-    def pct(p):
-        return scores[min(len(scores) - 1, int(len(scores) * p))]
-
-    return {
-        "count": len(scores),
-        "min": scores[0],
-        "max": scores[-1],
-        "median": pct(0.5),
-        "p75": pct(0.75),
-        "p90": pct(0.90),
-        "buckets": _buckets(scores),
-    }
-
-
-def _buckets(scores):
-    """Whole-point histogram, 1-10, for the distribution strip."""
-    out = {b: 0 for b in range(1, 11)}
-    for s in scores:
-        out[max(1, min(10, int(s)))] += 1
-    return out
+# The score distribution used to be computed here as well, over the
+# in-memory list a scan had just produced. It is gone: the board reads it
+# from the database instead (core/board.py), per user and including runs
+# older than today, which is the only version anything actually rendered.

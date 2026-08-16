@@ -11,6 +11,8 @@ them. Never a CV, a salary floor, a contact detail, or another user's
 board.
 """
 
+import re
+
 import pytest
 
 from core import db, publish, session
@@ -54,14 +56,20 @@ def page():
 
 
 def body_of(page):
-    """Everything a reader sees, minus the stylesheet.
+    """Everything a reader sees, minus the stylesheet and the timestamp.
 
     Asserting against the whole document gives false positives — a hex
     colour like #78828f contains "28" — and a false positive here trains
     people to loosen the privacy tests, which is the last thing this
     file should encourage.
+
+    The "updated 15 Aug, 21:28 IST" stamp is cut for the same reason, and
+    it is the sharper version of the problem: the salary floor below is
+    28, so this file failed for eleven minutes of every hour and passed
+    the rest. A privacy test that fails on the clock gets muted.
     """
-    return page.split("</style>", 1)[-1]
+    body = page.split("</style>", 1)[-1]
+    return re.sub(r'<p class="stamp">.*?</p>', "", body, flags=re.S)
 
 
 # ============================================================

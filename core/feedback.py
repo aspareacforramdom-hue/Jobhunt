@@ -14,7 +14,7 @@ import os
 from collections import Counter
 from datetime import datetime
 
-from core import dimensions
+from core import dimensions, intake
 from core.llm import call_llm
 
 OUTCOMES_PATH = "data/outcomes.json"
@@ -40,14 +40,14 @@ def log(url, status, note=""):
 
 def _load():
     if os.path.exists(OUTCOMES_PATH):
-        with open(OUTCOMES_PATH) as f:
+        with open(OUTCOMES_PATH, encoding="utf-8") as f:
             return json.load(f)
     return []
 
 
 def _save(data):
     os.makedirs("data", exist_ok=True)
-    with open(OUTCOMES_PATH, "w") as f:
+    with open(OUTCOMES_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
 
@@ -147,7 +147,7 @@ def apply_adjustments(profile, review_result, save=True):
     profile["weights"], profile["dimension_definitions"] = weights, defs
 
     if save:
-        with open("data/profile.json", "w") as f:
+        with open(intake.PROFILE_PATH, "w", encoding="utf-8") as f:
             json.dump(profile, f, indent=2)
 
     print(f"→ weights updated: {adj}")

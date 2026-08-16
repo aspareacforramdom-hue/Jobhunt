@@ -9,6 +9,7 @@ alone is enough to read a row.
 
 import math
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 from fastapi import Form, Request
 from fastapi.responses import RedirectResponse, Response
@@ -17,6 +18,13 @@ from core import db, reviews, tailor
 from web import export as export_mod
 from web import intake_routes
 from web.render import breakdown_rows, page
+
+
+# The list page renders every row it is given. At 800 scored listings
+# that is an 800-row table nobody scrolls, built and shipped on every
+# filter change. The export deliberately keeps no cap — a spreadsheet is
+# where you go when you actually want all of them.
+LIST_LIMIT = 250
 
 
 def register(app, db_path=None):
@@ -42,14 +50,17 @@ def register(app, db_path=None):
                 source=q.get("source") or None,
                 since=_since(q.get("days")),
                 search=q.get("q") or None,
-                order=q.get("order") or "score")
+                order=q.get("order") or "score",
+                limit=LIST_LIMIT + 1)
             sources = [r["source"] for r in conn.execute(
                 "SELECT DISTINCT source FROM jobs WHERE source IS NOT NULL")]
         finally:
             conn.close()
 
-        return page(request, "jobs.html", jobs=rows, sources=sources,
-                    filters=dict(q))
+        truncated = len(rows) > LIST_LIMIT
+        return page(request, "jobs.html", jobs=rows[:LIST_LIMIT],
+                    sources=sources, filters=dict(q),
+                    truncated=truncated, limit=LIST_LIMIT)
 
     @app.get("/ignored")
     def ignored(request: Request):
@@ -169,7 +180,7 @@ def register(app, db_path=None):
                 tailored, outreach = tailor.prepare_application(job, profile)
             except Exception as e:
                 return RedirectResponse(
-                    f"/jobs/{job_id}?msg=Could+not+prepare:+{e}",
+                    f"/jobs/{job_id}?msg={_msg('Could not prepare: ', e)}",
                     status_code=303)
 
             db.save_application(conn, user_id, job_id, tailored, outreach)
@@ -254,6 +265,20 @@ def _safe_back(back, default="/"):
     if any(c in back for c in "\r\n\t\x00") or "\\" in back:
         return default
     return back[:500]
+
+
+def _msg(prefix, detail):
+    """
+    Turn an exception into something worth showing a person.
+
+    Starlette percent-encodes the Location value and Jinja escapes the
+    flash, so this is not a safety fix — the raw version was merely
+    unreadable. An API error body arrives multi-line and kilobytes long,
+    and it went into the URL whole, so the user got a wall of `%0A` and
+    JSON where a sentence belonged. Capped, flattened, and encoded so it
+    cannot be read as further query parameters.
+    """
+    return quote(" ".join(f"{prefix}{detail}".split())[:240], safe="")
 
 
 def _float(value):

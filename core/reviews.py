@@ -37,6 +37,12 @@ from core import db
 from core.llm import call_llm
 
 MAX_AGE_DAYS = 30
+
+# Was 60. `summarize()` truncates the reviews to 12,000 characters before
+# the model ever sees them, and 60 AmbitionBox reviews is roughly double
+# that — so half of every company's reviews were bought and discarded
+# unread. At $0.009 a review that was ~$0.27 wasted per company.
+REVIEWS_PER_COMPANY = int(os.environ.get("CAREERLOOP_REVIEWS_PER_COMPANY", 20))
 RATINGS_ACTOR = "thirdwatch/ambitionbox-scraper"
 REVIEWS_ACTOR = "getdataforme/ambitionbox-reviews-scraper"
 APIFY_RUN = ("https://api.apify.com/v2/acts/{actor}/"
@@ -83,7 +89,7 @@ def fetch_ratings(company):
     }
 
 
-def fetch_reviews(company, limit=60):
+def fetch_reviews(company, limit=REVIEWS_PER_COMPANY):
     """Individual reviews. Pros, cons, and whether they still work there."""
     items = _run_actor(REVIEWS_ACTOR, {"companyName": company,
                                        "search": company, "maxItems": limit})
@@ -190,6 +196,24 @@ INDIVIDUAL REVIEWS ({len(reviews)} of them):
 # ------------------------------------------------------------
 # Orchestration
 # ------------------------------------------------------------
+def has_fresh_summary(conn, company, max_age_days=MAX_AGE_DAYS):
+    """
+    Do we already hold a themed summary for this company, recently?
+
+    Deliberately not the same question as db.company_is_fresh, which only
+    asks when the row was last touched. The distinction is the whole bug
+    this function exists to close: a Naukri listing carries a bare
+    AmbitionBox number, enrich_from_listing stores it, and that WRITE
+    made the row look fresh for thirty days — so the summary fetch was
+    skipped for exactly the companies the primary source found, and the
+    bias-corrected review section this module exists to produce was
+    never fetched for any of them.
+    """
+    row = db.get_company(conn, company)
+    return bool(row and row.get("review_summary")
+                and db.company_is_fresh(conn, company, max_age_days))
+
+
 def enrich(conn, company, sector=None, force=False, dry=False):
     """
     Fill in one company's review data, using the cache when it is fresh.
@@ -199,14 +223,18 @@ def enrich(conn, company, sector=None, force=False, dry=False):
     """
     if not company:
         return None
-    if not force and db.company_is_fresh(conn, company, MAX_AGE_DAYS):
+    if not force and has_fresh_summary(conn, company):
         return db.get_company(conn, company)
     if dry or not available():
         return db.get_company(conn, company)
 
     try:
         ratings = fetch_ratings(company)
-        reviews = fetch_reviews(company)
+        # The reviews actor is the expensive one — a $0.05 start fee on
+        # top of per-review charges, ten times the ratings actor. If
+        # AmbitionBox has nothing for this employer, the ratings call
+        # already told us, and paying to confirm it was pure waste.
+        reviews = fetch_reviews(company) if ratings else []
         if not ratings and not reviews:
             return db.get_company(conn, company)
 
@@ -232,16 +260,25 @@ def enrich_from_listing(conn, job):
     Cheap path: the Naukri actor attaches an AmbitionBox rating to each
     listing. Store it so a company has a number even if the full review
     fetch never runs — but do NOT let it overwrite a real summary.
+
+    save_company writes every column, so the earlier version also erased
+    any star breakdown and sector median already on the row while
+    carrying the rating across. Those are read straight back and passed
+    through.
     """
     name = job.get("company")
     rating = job.get("company_rating")
     if not name or rating is None:
         return
-    existing = db.get_company(conn, name)
-    if existing and existing.get("review_summary"):
+    existing = db.get_company(conn, name) or {}
+    if existing.get("review_summary"):
         return
-    db.save_company(conn, name, rating=_num(rating),
-                    review_count=_int(job.get("company_review_count")))
+    db.save_company(
+        conn, name, rating=_num(rating),
+        review_count=(_int(job.get("company_review_count"))
+                      or existing.get("review_count")),
+        rating_breakdown=existing.get("rating_breakdown") or {},
+        sector_median_rating=existing.get("sector_median_rating"))
 
 
 def enrich_top_companies(conn, jobs, limit=10, dry=False):
@@ -261,7 +298,9 @@ def enrich_top_companies(conn, jobs, limit=10, dry=False):
         if not name or name.lower() in seen:
             continue
         seen.add(name.lower())
-        if db.company_is_fresh(conn, name, MAX_AGE_DAYS):
+        # "Already have a summary", not "already have a row" — see
+        # has_fresh_summary.
+        if has_fresh_summary(conn, name):
             continue
         if enrich(conn, name, dry=dry):
             done += 1

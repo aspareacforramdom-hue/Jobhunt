@@ -1,0 +1,32 @@
+# Career Loop — everything needed to run the portal.
+#
+#   py -3.11 -m pip install -r requirements.txt
+#
+# The scrapers and the LLM caller use urllib from the standard library on
+# purpose: this runs on a laptop that gets set up once, and every package
+# listed here is one more thing that can be broken on a Tuesday morning.
+
+# --- the portal -------------------------------------------------------
+fastapi>=0.110
+uvicorn>=0.27
+jinja2>=3.1
+python-multipart>=0.0.9      # form posts: login, board actions, CSV upload
+pyyaml>=6.0                  # config/sources.yml, config/profile_schema.yml
+
+# --- the shortlister --------------------------------------------------
+# Static embeddings, ~30MB, CPU-only, no PyTorch. This is what decides
+# which listings the scorer is paid to read, and it replaced counting
+# shared words in job titles. Free to run; the model downloads once via
+# `py -3.11 run.py warm-up`.
+# Without it the tool falls back to word overlap and still works.
+model2vec>=0.9
+
+# --- optional, and degraded gracefully when missing -------------------
+openpyxl>=3.1                # /export.xlsx; falls back to CSV without it
+python-jobspy>=1.1.80        # Tier 2 (LinkedIn/Indeed). Off in sources.yml
+pandas>=2.0                  # required by python-jobspy
+
+# --- tests ------------------------------------------------------------
+pytest>=8.0
+playwright>=1.40             # tests/test_e2e_browser.py only.
+                             # After installing: playwright install chromium

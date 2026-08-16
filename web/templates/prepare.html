@@ -117,7 +117,7 @@
               <span class="muted">— {{ c.title }}</span></p>
             <p class="note">{{ c.why_them }}
               {% if c.source %}
-                · <a href="{{ c.source }}" target="_blank" rel="noopener"
+                · <a href="{{ c.source|safe_url }}" target="_blank" rel="noopener noreferrer"
                      class="linklike">source ↗</a>
               {% endif %}</p>
           </div>
@@ -141,7 +141,7 @@
         <input type="hidden" name="back" value="/applications">
         <button class="btn btn--solid">I've applied</button>
       </form>
-      <a href="{{ job.url }}" target="_blank" rel="noopener" class="btn">
+      <a href="{{ job.url|safe_url }}" target="_blank" rel="noopener noreferrer" class="btn">
         Open the listing ↗</a>
       <p class="note" style="margin-left: .5rem">
         Nothing is submitted for you. Copy, edit, send it yourself.</p>

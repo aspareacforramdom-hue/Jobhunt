@@ -171,7 +171,7 @@ INTAKE ANSWERS:
 
     if save:
         os.makedirs("data", exist_ok=True)
-        with open(PROFILE_PATH, "w") as f:
+        with open(PROFILE_PATH, "w", encoding="utf-8") as f:
             json.dump(profile, f, indent=2)
     return profile
 
@@ -227,7 +227,7 @@ def finalize_profile(profile):
 
 def load_profile():
     if os.path.exists(PROFILE_PATH):
-        with open(PROFILE_PATH) as f:
+        with open(PROFILE_PATH, encoding="utf-8") as f:
             return json.load(f)
     return None
 
@@ -236,9 +236,9 @@ def load_profile():
 # CLI driver
 # ------------------------------------------------------------
 def run_intake(cv_path):
-    with open("config/profile_schema.yml") as f:
+    with open("config/profile_schema.yml", encoding="utf-8") as f:
         schema = yaml.safe_load(f)
-    with open(cv_path) as f:
+    with open(cv_path, encoding="utf-8", errors="replace") as f:
         cv_text = f.read()
 
     print("→ Reading your CV...")

@@ -16,6 +16,7 @@ dimension is most uncertain; a static form cannot. v1 ships without it.
 
 import csv
 import io
+from urllib.parse import quote
 
 import yaml
 from fastapi import Form, Request, UploadFile
@@ -162,8 +163,12 @@ def register(app, db_path=None):
 
             db.save_profile(conn, user_id, profile)
         except Exception as e:
-            return RedirectResponse(f"/intake?msg=Compile+failed:+{e}",
-                                    status_code=303)
+            # Flattened and capped. The compiler's failure is an API
+            # error body — multi-line and long — and it used to go into
+            # the URL whole, so the flash was a wall of %0A and JSON.
+            detail = quote(" ".join(f"Compile failed: {e}".split())[:240],
+                           safe="")
+            return RedirectResponse(f"/intake?msg={detail}", status_code=303)
         finally:
             conn.close()
 

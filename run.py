@@ -4,6 +4,10 @@ CAREER LOOP  --  9-stage job intelligence machine (India-first)
 
     python run.py serve                the portal (three users, local)
     python run.py seed-users           create the three accounts
+    python run.py warm-up              download the shortlisting model
+    python run.py discover-companies   find which employers to watch (free)
+    python run.py set-telegram         --user NAME --chat ID
+    python run.py publish              standalone HTML, one page per user
 
     python run.py intake --cv cv.txt   Stage 0-1  profile + compile
     python run.py calibrate            Stage 2    market reality check
@@ -59,7 +63,7 @@ def cmd_calibrate(args):
     # Search terms live on the profile, not in global config — see
     # config/sources.yml for why.
     calib.attach_search_terms(profile, c)
-    with open(intake.PROFILE_PATH, "w") as f:
+    with open(intake.PROFILE_PATH, "w", encoding="utf-8") as f:
         json.dump(profile, f, indent=2)
     print(f"→ {len(profile['search_terms'])} search terms saved to your profile")
 
@@ -72,7 +76,7 @@ def cmd_scan(args):
         print("Run `python run.py intake --cv yourcv.txt` first.")
         return
 
-    with open("config/sources.yml") as f:
+    with open("config/sources.yml", encoding="utf-8") as f:
         sources = yaml.safe_load(f)
 
     terms = profile.get("search_terms") or []
@@ -117,7 +121,7 @@ def cmd_scan(args):
         tailor.prepare_top(ranked, profile, n=3)
 
     os.makedirs("data", exist_ok=True)
-    with open("data/latest.json", "w") as f:
+    with open("data/latest.json", "w", encoding="utf-8") as f:
         json.dump(ranked, f, indent=2, default=str)
     flt.save_seen(seen)
 
@@ -226,12 +230,137 @@ def cmd_migrate(args):
     username = args[args.index("--user") + 1]
 
     conn = db.connect()
-    user = db.get_user_by_name(conn, username)
-    if not user:
-        print(f"No such user: {username}. Run `run.py seed-users` first.")
+    try:
+        user = db.get_user_by_name(conn, username)
+        if not user:
+            print(f"No such user: {username}. Run `run.py seed-users` first.")
+            return
+        legacy.migrate_json(conn, user["id"])
+    finally:
+        conn.close()
+
+
+def cmd_discover_companies(args):
+    """
+    Work out which employers to watch, instead of typing them into YAML.
+
+        run.py discover-companies                    every user
+        run.py discover-companies --user alice
+        run.py discover-companies --names "Swiggy,Zomato,Cred"
+        run.py discover-companies --list
+
+    One LLM call per user turns their profile into employer names; those
+    names are then probed against five free, no-auth ATS APIs. The
+    probing is the useful half and it costs nothing — a company either
+    answers with live jobs or it does not.
+
+    Not part of a scan. Run it monthly, or after someone's intake
+    changes.
+    """
+    from core import companies
+
+    conn = db.connect()
+    try:
+        if "--list" in args:
+            boards = db.list_job_boards(conn)
+            if not boards:
+                print("No boards discovered yet.")
+                return
+            print(f"{len(boards)} board(s) being watched:\n")
+            for b in boards:
+                print(f"  {b['platform']:16} {b['slug']:24} "
+                      f"{b['jobs_seen']:4} jobs   {b['company_name'] or ''}")
+            return
+
+        names = []
+        if "--names" in args:
+            names = [n.strip() for n in
+                     args[args.index("--names") + 1].split(",") if n.strip()]
+
+        users = db.all_users(conn)
+        if "--user" in args:
+            wanted = args[args.index("--user") + 1]
+            users = [u for u in users if u["username"] == wanted]
+            if not users:
+                print(f"No such user: {wanted}")
+                return
+
+        total = 0
+        for user in users:
+            profile = db.load_profile(conn, user["id"])
+            if not profile and not names:
+                print(f"→ {user['username']}: no profile yet, skipped")
+                continue
+            print(f"→ {user['username']}")
+            found = companies.discover_for_user(conn, user["id"], profile,
+                                                extra_names=names)
+            total += len(found)
+            for b in found[:10]:
+                print(f"     {b['platform']:16} {b['slug']:22} "
+                      f"{b['jobs']:4} jobs")
+
+        print(f"\n→ {total} board(s) recorded. They join every scan from "
+              f"now on — see `run.py discover-companies --list`.")
+    finally:
+        conn.close()
+
+
+def cmd_warm_up(args):
+    """
+    Download the shortlisting model, once, on purpose.
+
+    A scan never does this itself. Fetching 30MB is a fine thing to do
+    when someone typed a command and is watching; it is not a fine thing
+    to do inside a background scan that is supposed to be quick, on a
+    connection that might be a phone hotspot.
+    """
+    from core import semantic
+    if semantic.available():
+        print(f"→ shortlisting model already present ({semantic.MODEL_NAME})")
         return
-    legacy.migrate_json(conn, user["id"])
-    conn.close()
+    print(f"→ downloading {semantic.MODEL_NAME} (~30MB, one time)...")
+    if semantic.warm_up():
+        print("→ ready. Shortlisting now ranks by meaning rather than by "
+              "counting shared words.")
+    else:
+        print("→ could not load it. Scans still work — they fall back to "
+              "word overlap, which is worse but free and offline.")
+
+
+def cmd_set_telegram(args):
+    """
+    Attach a Telegram chat id to one account.
+
+    Without this there was no way to set the column: seeding leaves it
+    NULL, and the scanner refuses to fall back to the environment's chat
+    id because that is how one person's roles end up in another person's
+    Telegram. So every digest was skipped with a warning, for everyone,
+    and nothing in the tool could fix it.
+
+    Get the id by messaging the bot and opening
+    api.telegram.org/bot<TOKEN>/getUpdates.
+    """
+    if "--user" not in args:
+        print("usage: run.py set-telegram --user <username> --chat <id>\n"
+              "       run.py set-telegram --user <username> --clear")
+        return
+    username = args[args.index("--user") + 1]
+    chat_id = args[args.index("--chat") + 1] if "--chat" in args else None
+    if not chat_id and "--clear" not in args:
+        print("Pass --chat <id>, or --clear to remove it.")
+        return
+
+    conn = db.connect()
+    try:
+        user = db.get_user_by_name(conn, username)
+        if not user:
+            print(f"No such user: {username}")
+            return
+        db.set_telegram_chat_id(conn, user["id"], chat_id)
+        print(f"→ {username}: telegram chat id "
+              f"{'cleared' if not chat_id else 'set'}")
+    finally:
+        conn.close()
 
 
 def cmd_log(args):
@@ -259,6 +388,9 @@ COMMANDS = {
     "log": cmd_log,
     "review": cmd_review,
     "seed-users": cmd_seed_users,
+    "warm-up": cmd_warm_up,
+    "discover-companies": cmd_discover_companies,
+    "set-telegram": cmd_set_telegram,
     "publish": cmd_publish,
     "migrate": cmd_migrate,
     "serve": cmd_serve,

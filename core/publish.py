@@ -41,6 +41,20 @@ def _score(value):
         return "—"
 
 
+def _href(value):
+    """
+    Only http(s) links get an anchor.
+
+    Listing URLs are scraped. `_esc` stops one breaking out of the
+    attribute, but `javascript:` does not need to break out — a reader
+    clicking "Open the listing" is exactly what it is waiting for, and
+    this page is meant to be forwarded to people who did not run the
+    scan. A non-http URL renders as plain text with no link at all.
+    """
+    text = str(value or "").strip()
+    return _esc(text) if text[:7].lower() in ("http://", "https:/") else ""
+
+
 def render(display_name, profile, jobs, distribution, note=None):
     """Returns a complete HTML document for one person's board."""
     target = (profile or {}).get("target") or {}
@@ -161,7 +175,7 @@ def _job_html(job, weights):
           <p class="label">Why it might not</p>
           <ul>{against_html}</ul>
         </div>
-        {f'<a class="apply" href="{_esc(job.get("url"))}" target="_blank" rel="noopener noreferrer">Open the listing</a>' if job.get('url') else ''}
+        {f'<a class="apply" href="{_href(job.get("url"))}" target="_blank" rel="noopener noreferrer">Open the listing</a>' if _href(job.get('url')) else ''}
       </div>
     </li>"""
 

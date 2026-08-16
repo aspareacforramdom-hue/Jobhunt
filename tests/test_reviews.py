@@ -102,7 +102,11 @@ def test_a_listing_rating_is_kept_when_there_is_nothing_better(conn):
 
 def test_enrichment_is_bounded_and_skips_cached_companies(conn, monkeypatch):
     monkeypatch.setenv("APIFY_TOKEN", "x")
-    db.save_company(conn, "Cached", rating=4.0)
+    # Cached means summarised. This fixture used to be a bare rating,
+    # which encoded the bug in test_a_bare_rating_is_not_a_cache_hit
+    # below: a row is not a cache hit just because it exists.
+    db.save_company(conn, "Cached", rating=4.0,
+                    review_summary={"confidence": "high"})
 
     called = []
     monkeypatch.setattr(reviews, "enrich",
@@ -117,6 +121,25 @@ def test_enrichment_is_bounded_and_skips_cached_companies(conn, monkeypatch):
     assert done == 3
     assert "Cached" not in called
     assert len(called) == len(set(called)) == 3
+
+
+def test_a_bare_rating_is_not_a_cache_hit(conn, monkeypatch):
+    """
+    The number a Naukri listing carries is a headline, not a summary.
+    Treating it as cached meant the themed, bias-corrected review fetch
+    never ran for any company the primary source found — silently, for
+    thirty days at a time.
+    """
+    monkeypatch.setenv("APIFY_TOKEN", "x")
+    reviews.enrich_from_listing(conn, {"company": "Naukri Co",
+                                       "company_rating": 3.6})
+
+    called = []
+    monkeypatch.setattr(reviews, "enrich",
+                        lambda c, name, **kw: called.append(name) or True)
+
+    assert reviews.enrich_top_companies(conn, [{"company": "Naukri Co"}]) == 1
+    assert called == ["Naukri Co"]
 
 
 def test_the_cache_is_shared_so_the_second_user_pays_nothing(conn):

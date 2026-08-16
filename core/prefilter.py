@@ -19,6 +19,8 @@ seniority if the user's own profile states a ceiling.
 
 import re
 
+from core import semantic
+
 
 def _tokens(phrases):
     """Words worth matching a title against. Short words match noise."""
@@ -90,7 +92,24 @@ def _years_required(text):
     return max(found) if found else None
 
 
-def prefilter(jobs, profile, keep_ratio=0.25, min_keep=20):
+def prefilter(jobs, profile, top_n=40, min_keep=20,
+              margin=0.15, floor=0.45):
+    """
+    Cut the day's scrape down to what is worth paying to score.
+
+    `top_n` is an absolute number, not a share of the scrape. The share
+    version scaled with the noise: a 717-listing day produced 179
+    candidates for one user regardless of whether 179 were any good,
+    and every one of them cost money to read.
+
+    The similarity cut is RELATIVE, because the scale moves with the
+    person and the day. Measured on one real corpus, the best match was
+    0.82 for the product manager and 0.71 for the data engineer — a
+    fixed cut-off generous to her would have flooded him, and one tuned
+    to him would have left her with nothing. So the rule is "close to
+    the best thing we found today", with an absolute floor underneath it
+    for the days when the best thing found is not good at all.
+    """
     hf = profile.get("hard_filters", {}) or {}
     excl = [e.lower() for e in hf.get("exclude_keywords", []) if e]
     excl_titles = [t.lower() for t in hf.get("exclude_titles", []) if t]
@@ -105,8 +124,21 @@ def prefilter(jobs, profile, keep_ratio=0.25, min_keep=20):
         ceiling = None
 
     phrases, tokens = _wanted(profile)
+    if not phrases and not semantic.available():
+        # _title_signal scores 0 against an empty vocabulary, so every
+        # listing is dropped. That is the right call — scoring the whole
+        # market for someone with no stated target is how you spend a
+        # month's budget in one scan — but it used to happen in silence,
+        # and an empty board looks identical to a quiet market.
+        print("→ prefilter: this profile names no role, no alt titles and "
+              "no search terms, so nothing can match. Run `run.py "
+              "calibrate`, or re-run intake.")
+        return []
 
-    survivors = []
+    # Pass 1 — the hard rules. These are correctness, not ranking: a
+    # listing the user has excluded, or in a city they will not move to,
+    # is wrong at any similarity score.
+    eligible = []
     for j in jobs:
         title = (j.get("title") or "")
         low_title = title.lower()
@@ -122,18 +154,53 @@ def prefilter(jobs, profile, keep_ratio=0.25, min_keep=20):
             need = _years_required(blob)
             if need is not None and need > ceiling:
                 continue
+        eligible.append(j)
 
-        sig = _title_signal(title, phrases, tokens)
-        if sig == 0:
-            continue
+    # Pass 2 — the ranking, by meaning where we can and by word overlap
+    # where we cannot. See core/semantic.py for why the difference
+    # matters: word overlap ranks "Associate Manager - Risk & Compliance"
+    # as a strong match for "Product Marketing Manager", and the scorer
+    # then pays to read it.
+    ranked = semantic.rank(eligible, profile)
+    if ranked is not None:
+        for j in ranked:
+            # One canonical "how good is this" number whichever path
+            # ranked it, so nothing downstream has to know which ran.
+            j["_prefilter_signal"] = j["_semantic_score"]
+        # Two different gates, and the difference matters.
+        #
+        # The FLOOR is about relevance and always holds: a listing with
+        # no title, or one about warehouse logistics, is not a candidate
+        # for a brand search on any day, however thin the day was.
+        #
+        # The MARGIN is about spend, and only bites when there is spend
+        # to control. Applied to a two-listing day it dropped "Director
+        # - Brand" from a brand search — precisely the stretch title
+        # this tool exists to surface — to save nothing at all.
+        relevant = [j for j in ranked if j["_semantic_score"] >= floor]
+        if relevant:
+            cut = relevant[0]["_semantic_score"] - margin
+            best = [j for j in relevant if j["_semantic_score"] >= cut]
+            kept = (best if len(best) >= min_keep else relevant)[:top_n]
+        else:
+            kept = []
+        how = "semantic"
+    else:
+        survivors = []
+        for j in eligible:
+            sig = _title_signal(j.get("title") or "", phrases, tokens)
+            if sig == 0:
+                continue
+            j["_prefilter_signal"] = sig
+            survivors.append(j)
+        survivors.sort(key=lambda x: -x["_prefilter_signal"])
+        # The old cap was a share of the RAW scrape, so it grew with how
+        # noisy the day was rather than with how many listings actually
+        # matched — one user got 179 candidates out of 717 because the
+        # scrape was large, not because 179 were any good.
+        kept = survivors[:max(min_keep, min(top_n, len(survivors)))]
+        how = "keywords"
 
-        j["_prefilter_signal"] = sig
-        survivors.append(j)
-
-    survivors.sort(key=lambda x: -x["_prefilter_signal"])
-    cap = max(min_keep, int(len(jobs) * keep_ratio))
-    kept = survivors[:cap]
-
-    print(f"→ prefilter: {len(jobs)} → {len(kept)} "
+    print(f"→ prefilter ({how}): {len(jobs)} → {len(kept)} "
           f"(saved ~{(len(jobs)-len(kept))//8} LLM calls)")
     return kept

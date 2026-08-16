@@ -4,7 +4,10 @@
 {% block content %}
 <div class="pagehead">
   <h1>All jobs</h1>
-  <span class="label">{{ jobs|length }} shown · ignored excluded</span>
+  <span class="label">
+    {{ jobs|length }} shown · ignored excluded
+    {%- if truncated %} · first {{ limit }}, narrow the filters or export{% endif -%}
+  </span>
   <a href="/export.xlsx?{{ request.url.query }}" class="linklike pagehead__end"
      title="Exports exactly what these filters show">Export ↓</a>
 </div>
@@ -68,6 +71,7 @@
         <th>Company</th>
         <th style="width: 7rem">Status</th>
         <th style="width: 5rem">Found</th>
+        <th style="width: 4rem"></th>
       </tr>
     </thead>
     <tbody>
@@ -98,6 +102,19 @@
           </td>
           <td class="label" style="text-transform: none">{{ j.status }}</td>
           <td class="counter">{{ j.found_at|local_date }}</td>
+          <td>
+            {# The pool accumulates for as long as you run this, so the
+               list is where you clear things you have already looked at.
+               Opening each role first to dismiss it does not scale past
+               a few hundred rows. #}
+            <form method="post" action="/jobs/{{ j.id }}/ignore">
+              <input type="hidden" name="back"
+                     value="/jobs?{{ request.url.query }}">
+              <button class="btn btn--sm btn--quiet"
+                      title="Remove from the list — kept on the ignored page">
+                Ignore</button>
+            </form>
+          </td>
         </tr>
       {% endfor %}
     </tbody>

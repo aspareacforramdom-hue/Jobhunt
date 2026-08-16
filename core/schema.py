@@ -115,4 +115,38 @@ MIGRATIONS = [
     """
     CREATE INDEX IF NOT EXISTS idx_companies_lower ON companies(LOWER(name));
     """,
+
+    # 3 — somewhere to remember one number between scans.
+    #
+    # The paid search tier can only afford a handful of keywords per
+    # scan, but three people between them have eighteen. Taking the
+    # first six every time means the last twelve are never searched at
+    # all — so the slice rotates, and rotation needs to survive a
+    # restart. Not per-user: this is one cursor over the shared list.
+    """
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT
+    );
+    """,
+
+    # 4 — job boards discovered by probing, rather than typed into YAML.
+    #
+    # SHARED, not per user, for the same reason `jobs` is shared: the
+    # scrape happens once and every user's scorer reads the result. The
+    # user who surfaced a board is recorded because it is useful to
+    # know, not because it scopes anything.
+    """
+    CREATE TABLE IF NOT EXISTS job_boards (
+      platform      TEXT NOT NULL,
+      slug          TEXT NOT NULL,
+      company_name  TEXT,
+      jobs_seen     INTEGER NOT NULL DEFAULT 0,
+      found_for     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      enabled       INTEGER NOT NULL DEFAULT 1,
+      discovered_at TEXT,
+      last_seen_at  TEXT,
+      PRIMARY KEY (platform, slug)
+    );
+    """,
 ]

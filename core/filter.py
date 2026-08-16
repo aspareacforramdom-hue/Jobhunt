@@ -22,14 +22,14 @@ def _key(job):
 
 def load_seen():
     if os.path.exists(SEEN_PATH):
-        with open(SEEN_PATH) as f:
+        with open(SEEN_PATH, encoding="utf-8") as f:
             return set(json.load(f))
     return set()
 
 
 def save_seen(seen):
     os.makedirs("data", exist_ok=True)
-    with open(SEEN_PATH, "w") as f:
+    with open(SEEN_PATH, "w", encoding="utf-8") as f:
         json.dump(sorted(seen), f, indent=1)
 
 

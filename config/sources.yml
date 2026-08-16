@@ -55,6 +55,23 @@ ats_targets:
     - navi
     - atlan
 
+  # Two more free, no-auth ATS platforms. Same deal as the three above:
+  # find the careers page, take the slug from the URL.
+  #   jobs.smartrecruiters.com/SLUG   ->  smartrecruiters
+  #   apply.workable.com/SLUG         ->  workable
+  #
+  # Empty by default because a slug has to be verified to be worth
+  # anything — a wrong one logs a line and is skipped, but a right one
+  # is free coverage forever. Add the Indian employers you care about.
+  # Both verified live: probing the public endpoint returned real jobs.
+  # swiggy is the interesting one — Firecrawl was being PAID to scrape
+  # careers.swiggy.com and returned 0 listings on every measured scan,
+  # while Swiggy publishes its whole board on this free API.
+  smartrecruiters:
+    - swiggy          # 46 live jobs, free (was: 0 via paid Firecrawl)
+    - freshworks      # 153 live jobs, free
+  workable: []
+
 # LAYER B2: Firecrawl Cloud — the long tail.
 # Covers what neither the ATS JSON nor Apify reaches: job boards this
 # tool has no adapter for, and employers whose careers page is bespoke
@@ -86,8 +103,14 @@ firecrawl:
   # page is bespoke, so neither the ATS JSON nor Naukri reaches them.
   # Verified working; note descriptions from these pages are short, so
   # the scorer judges them on less than it gets from Naukri.
-  career_pages:
-    - https://careers.swiggy.com/#/careers
+  # Swiggy was here and produced 0 listings on every measured scan while
+  # costing a page credit each time — its careers page is a JavaScript
+  # shell. It is now fetched free via SmartRecruiters (46 live jobs).
+  #
+  # The lesson generalises: before paying to scrape a careers page, probe
+  # the five free ATS APIs with the company's slug. Most Indian tech
+  # employers are on one of them.
+  career_pages: []
 
 # LAYER C: Apify — the PRIMARY path for Naukri, not the fallback.
 # Naukri's bot protection changes monthly and already returned
@@ -102,9 +125,133 @@ firecrawl:
 apify:
   enabled: true           # no-ops without APIFY_TOKEN in the environment
   naukri_actor: "muhammetakkurtt/naukri-job-scraper"
-  results_wanted: 50      # the actor's minimum; lower values are rejected
-  fetch_details: true     # off = titles only, which the scorer cannot judge
-  freshness: "7"          # days: all | 30 | 15 | 7 | 3 | 1
+
+  # ---- what one scan is allowed to cost -------------------------------
+  # A measured scan on the old settings cost ~$20.82: 18 searches x 50
+  # jobs x (listing + full description), of which the shortlister then
+  # rejected 97%. The $5 credit ran out around the 6th of 18 searches,
+  # mid-run, which is why Naukri data never properly arrived.
+  max_spend_per_scan_usd: 1.50   # hard ceiling; searches are trimmed to fit
+  max_terms_per_scan: 6          # rotates across scans, so nobody is starved
+
+  # Actor list prices, FREE tier, read from Apify's API on 2026-08-16.
+  # Only used to estimate before spending. Update if the actor changes.
+  prices:
+    run_init_usd: 0.01
+    standard_job_usd: 0.005
+    detailed_job_usd: 0.01
+
+  # ---- seed once, then daily deltas -----------------------------------
+  # The first time a keyword is ever searched there is no history in the
+  # pool, so that run opens the window wide and takes a deep slice. Every
+  # run after it asks only for what has appeared since.
+  #
+  # This is the fix for buying the same listing over and over: dedup
+  # happens AFTER billing, so a wide window scanned daily pays for a
+  # month of jobs every single day and bins all but the newest.
+  #
+  # Which keywords are already seeded is remembered in the database, so
+  # a restart never re-buys the history. The deep pass is the expensive
+  # one — the ceiling below spreads it over as many scans as it needs.
+  backfill_results_wanted: 50   # deep first pass, per keyword, once
+  backfill_freshness: "30"      # how far back that first pass reaches
+
+  # ---- how much to buy ------------------------------------------------
+  results_wanted: 20      # was 50. The actor's schema shows NO minimum;
+                          # the old comment claiming it rejects <50 is
+                          # unsupported. If a run fails, put this back.
+  fetch_details: false    # phase 1 buys titles only — a third of the price.
+                          # The shortlister reads titles anyway, and the
+                          # descriptions the scorer needs are bought after
+                          # the shortlist, for survivors only.
+  freshness: "1"          # days: all | 30 | 15 | 7 | 3 | 1
+                          # Was 7 with daily scans, so the same listing was
+                          # bought up to seven times before dedup binned it.
+  company_jobs_only: true # exclude consultant/staffing reposts. Free win.
+
+# Naukri's own server-side filters, by numeric id. Filtering on THEIR
+# side means never paying for the noise — the actor bills per result
+# handed back. `calibrate` fills this in per user; these are the
+# fallbacks, and a hand-written entry here always wins.
+#
+# department:    9 Marketing & Communication, 10 Product Management,
+#                3 Data Science & Analytics, 5 Engineering - Software & QA
+# role_category: 1050 Marketing, 1048 Digital Marketing,
+#                1028 Software Development, 1018 BI & Analytics
+# work_mode:     remote | hybrid | office | temporary_wfh
+# company_type:  62 Startup, 213 Foreign MNC, 217 Indian MNC, 211 Corporate
+#
+# NOT here on purpose: experience and salary. This tool ranks stretch
+# roles above safe ones, so filtering to someone's current level would
+# delete the roles it exists to find; and a salary filter drops every
+# "not disclosed" listing, which on Naukri is most of the good ones.
+naukri_filters: {}
+
+# LAYER D2: LinkedIn via Apify.
+#
+# Kept despite the ATS boards covering much of the same ground, because
+# LinkedIn carries things nothing else does: the recruiter behind the
+# posting, the applicant count, and Easy Apply. Some employers post
+# there and nowhere else.
+#
+# THE COST SHAPE IS THE OPPOSITE OF NAUKRI'S. Naukri bills purely per
+# result, so narrow searches are cheap and you want many. This actor
+# bills per result with a FLOOR — "minimum 150 results when using
+# pay-per-result billing" — so every run costs at least 150 results
+# whether you needed 150 or 20. Eighteen narrow keyword runs would pay
+# eighteen floors.
+#
+# So this makes ONE run per scan carrying every keyword. The actor pairs
+# each keyword with each location itself, and the free local shortlister
+# does the precision work afterwards.
+linkedin:
+  enabled: false          # flip on once you have credit; costs ~$0.11/scan
+  actor: "cheap_scraper/linkedin-job-scraper"
+  max_items: 150          # the billing floor — asking for less saves nothing
+  backfill_max_items: 500 # the one deep first run; ~500 is LinkedIn's practical cap
+  freshness: "1"          # 1 | 7 | 30 days, mapped to LinkedIn's own windows
+  billing_floor: 150
+  max_spend_per_scan_usd: 0.60
+  prices:                 # FREE tier, read from Apify's API on 2026-08-16
+    run_start_usd: 0.005
+    result_usd: 0.0007
+
+# Two kinds of LinkedIn filter, and the difference is money.
+#
+# Applied by LINKEDIN, so non-matching jobs are never returned and never
+# billed — these genuinely save:
+#     jobType, workType, filterUnder10Applicants, filterEasyApply,
+#     companyInclude
+#
+# Applied by the ACTOR after collection — the docs say "jobs are still
+# collected and counted toward billing". These improve what reaches the
+# board and save nothing:
+#     jobFunctionInclude, jobIndustryInclude, excludeRecruitingAgencies,
+#     jobTitleExclude, companyExclude, subLocationExclude
+#
+# Not offered here on purpose: experienceLevel and salaryBase. Same
+# refusal as Naukri — this tool ranks stretch roles above safe ones.
+linkedin_filters:
+  jobType: ["full-time"]
+  excludeRecruitingAgencies: true
+
+# LAYER E: employer reviews (AmbitionBox via Apify) — ON DEMAND.
+#
+# This used to run during every scan: two paid actor runs for the top
+# ten companies PER USER. Measured, that was 12 companies and $7.14 on a
+# single scan, buying themed review summaries for employers nobody had
+# opened yet — and the reviews actor charges a $0.05 start fee on top of
+# every review it returns.
+#
+# The detail page has a "Look up reviews" button, so the same money now
+# buys reviews for companies someone is actually reading about. Basic
+# star ratings still arrive free with Naukri listings, as before.
+#
+# Turn this on only if you would rather pay up front than wait a few
+# seconds when you open a role.
+reviews:
+  enrich_during_scan: false
+  reviews_per_company: 20   # was 60; summarize() only reads ~12KB anyway
 
 # LAYER D: Government (optional, off by default)
 govt:

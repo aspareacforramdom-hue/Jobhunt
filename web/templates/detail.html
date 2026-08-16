@@ -142,7 +142,7 @@
         </form>
       {% endif %}
 
-      <a href="{{ job.url }}" target="_blank" rel="noopener"
+      <a href="{{ job.url|safe_url }}" target="_blank" rel="noopener noreferrer"
          class="linklike">Open listing ↗</a>
 
       <form method="post" action="/jobs/{{ job.id }}/ignore"

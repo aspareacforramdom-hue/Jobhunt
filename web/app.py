@@ -29,12 +29,23 @@ def create_app(boot_scan=True, dry=False, db_path=None):
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        conn = db.connect(db_path)
+        # Boot work must not be able to stop the portal from starting.
+        # A half-readable data/*.json or an unexpected profile shape
+        # raised out of here, and the failure mode was the whole app
+        # refusing to come up with a traceback — for an optional import
+        # and a scheduling hint. Both are reported and skipped instead,
+        # which leaves a portal that still shows every job already
+        # scored and a "Scan now" button that still works.
+        decision = {"due": False, "reason": "could not be determined"}
         try:
-            _first_run_import(conn)
-            decision = app.state.scanner.decide(conn)
-        finally:
-            conn.close()
+            conn = db.connect(db_path)
+            try:
+                _first_run_import(conn)
+                decision = app.state.scanner.decide(conn)
+            finally:
+                conn.close()
+        except Exception as e:                       # noqa: BLE001
+            print(f"→ boot checks failed, serving anyway: {e}")
 
         print(f"→ boot scan: {decision['reason']}")
         if boot_scan and decision["due"]:
@@ -57,20 +68,27 @@ def create_app(boot_scan=True, dry=False, db_path=None):
         request.state.user = None
         request.state.db_path = db_path
 
-        conn = db.connect(db_path)
-        try:
-            request.state.user = session.user_from_cookie(
-                conn, request.cookies.get(session.COOKIE_NAME))
-        finally:
-            conn.close()
-
         # The stylesheet has to load on the sign-in page, so /static is
         # exempt. It is the only prefix exemption — everything else is
         # matched exactly, so a new route is gated by default.
-        if request.state.user is None \
-                and request.url.path not in PUBLIC_PATHS \
-                and not request.url.path.startswith("/static/"):
-            return RedirectResponse("/login", status_code=303)
+        is_static = request.url.path.startswith("/static/")
+
+        # Static files belong to nobody, so resolving a user for them is
+        # a database connection opened and closed per stylesheet, font
+        # and icon on every page load. Skip it — and note the skip is
+        # only reached for paths that are already exempt from the gate
+        # below, so it cannot widen what is public.
+        if not is_static:
+            conn = db.connect(db_path)
+            try:
+                request.state.user = session.user_from_cookie(
+                    conn, request.cookies.get(session.COOKIE_NAME))
+            finally:
+                conn.close()
+
+            if request.state.user is None \
+                    and request.url.path not in PUBLIC_PATHS:
+                return RedirectResponse("/login", status_code=303)
 
         return await call_next(request)
 

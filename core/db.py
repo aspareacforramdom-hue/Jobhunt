@@ -97,11 +97,29 @@ MIGRATIONS = schema.MIGRATIONS
 
 
 def init_db(conn):
-    """Idempotent. Safe to call on every boot."""
-    conn.execute("CREATE TABLE IF NOT EXISTS schema_version "
-                 "(version INTEGER NOT NULL)")
-    row = conn.execute("SELECT MAX(version) v FROM schema_version").fetchone()
-    current = row["v"] or 0
+    """
+    Idempotent. Safe to call on every boot — and it is called far more
+    often than that: every HTTP request opens a connection through
+    connect(), and the header polls scan status every 15 seconds.
+
+    So the already-migrated path does one read and nothing else. It used
+    to run CREATE TABLE IF NOT EXISTS plus a commit on every request.
+    Measured on an idle database that is worth about 0.1ms, which is
+    nothing — the reason to remove it is that both statements take a
+    write lock to discover there is nothing to write, and the moment
+    that matters is the one where the boot scan is holding it.
+    """
+    try:
+        row = conn.execute(
+            "SELECT MAX(version) v FROM schema_version").fetchone()
+        current = row["v"] or 0
+    except sqlite3.OperationalError:
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_version "
+                     "(version INTEGER NOT NULL)")
+        current = 0
+
+    if current >= len(MIGRATIONS):
+        return conn
 
     for i, sql in enumerate(MIGRATIONS, start=1):
         if i <= current:
@@ -559,6 +577,68 @@ def last_successful_run(conn, user_id=None):
         params.append(user_id)
     sql += " ORDER BY finished_at DESC LIMIT 1"
     return conn.execute(sql, params).fetchone()
+
+
+# ------------------------------------------------------------
+# Settings  (global, not per user)
+# ------------------------------------------------------------
+def get_setting(conn, key, default=None):
+    row = conn.execute("SELECT value FROM settings WHERE key = ?",
+                       (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(conn, key, value):
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?,?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, str(value)))
+    conn.commit()
+
+
+# ------------------------------------------------------------
+# Job boards  (discovered by probing — shared, like `jobs`)
+# ------------------------------------------------------------
+def save_job_board(conn, platform, slug, company_name=None, jobs_seen=0,
+                   found_for=None):
+    """
+    Record a board that answered with live roles.
+
+    `discovered_at` is preserved on re-discovery so the record keeps
+    saying when this board first appeared, while `jobs_seen` and
+    `last_seen_at` move — a board that has quietly gone to zero is worth
+    being able to notice.
+    """
+    conn.execute(
+        "INSERT INTO job_boards (platform, slug, company_name, jobs_seen, "
+        "found_for, enabled, discovered_at, last_seen_at) "
+        "VALUES (?,?,?,?,?,1,?,?) "
+        "ON CONFLICT(platform, slug) DO UPDATE SET "
+        "company_name=COALESCE(excluded.company_name, "
+        "job_boards.company_name), "
+        "jobs_seen=excluded.jobs_seen, last_seen_at=excluded.last_seen_at",
+        (platform, slug, company_name, int(jobs_seen or 0), found_for,
+         now(), now()))
+    conn.commit()
+
+
+def list_job_boards(conn, platform=None, enabled_only=True):
+    sql = "SELECT * FROM job_boards WHERE 1=1"
+    params = []
+    if platform:
+        sql += " AND platform = ?"
+        params.append(platform)
+    if enabled_only:
+        sql += " AND enabled = 1"
+    sql += " ORDER BY jobs_seen DESC, slug"
+    return conn.execute(sql, params).fetchall()
+
+
+def set_job_board_enabled(conn, platform, slug, enabled):
+    conn.execute(
+        "UPDATE job_boards SET enabled=? WHERE platform=? AND slug=?",
+        (1 if enabled else 0, platform, slug))
+    conn.commit()
 
 
 def recent_runs(conn, user_id, limit=10):
