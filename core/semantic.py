@@ -129,10 +129,20 @@ def anchors(profile):
     are looking for anything close to ANY of them. So each phrase gets
     its own vector and a listing scores on its best match.
     """
-    target = (profile or {}).get("target") or {}
-    parts = [target.get("role_family") or ""]
-    parts += list(target.get("alt_titles") or [])
-    parts += list((profile or {}).get("search_terms") or [])
+    profile = profile or {}
+    parts = []
+    # BOTH targets, because the shortlister decides what the scorer is
+    # even allowed to look at. The intake infers two — the job she wants
+    # to grow into, and the best-paid job her CV already sells — and a
+    # leverage role that never clears the semantic floor is a role she
+    # never sees, however well it pays. Leaving this on `target` alone
+    # meant half the feature was collected, stored, and then filtered
+    # out one step before it could matter.
+    for key in ("target", "leverage_target"):
+        block = profile.get(key) or {}
+        parts.append(block.get("role_family") or "")
+        parts += list(block.get("alt_titles") or [])
+    parts += list(profile.get("search_terms") or [])
 
     seen, out = set(), []
     for p in parts:

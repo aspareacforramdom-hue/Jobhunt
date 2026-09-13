@@ -56,6 +56,10 @@ Each element:
   "breakdown": {"<each dimension id given to you>": <float 1.0-10.0>},
   "verdict": "<one blunt sentence — why this does or doesn't move them forward>",
   "stretch": <true if above their current level>,
+  "track": "<'ideal' if this fits the job they want to grow into,
+             'leverage' if it fits the best-paid job their CV already
+             sells, 'both' when it genuinely does both. Pick on the
+             merits of the listing, not on which sounds kinder>",
   "angle": "<the single strongest line for their application note>",
   "risk": "<the strongest honest reason against applying, or null>",
   "evidence": "<the strongest concrete thing in their résumé this
@@ -99,10 +103,32 @@ def _system(profile):
         "alone, return null for `evidence`, and do not guess at what "
         "their experience might contain.")
 
+    # Two targets, one call. The listing text is what costs money and it
+    # is sent once either way, so the second verdict is close to free —
+    # and scoring a well-paid sideways move against a "stretch" target
+    # alone marks it a near miss, which is the wrong answer for somebody
+    # with a salary floor and a notice period.
+    leverage = profile.get("leverage_target") or {}
+    weighting = profile.get("track_weighting")
+    leverage_block = (
+        f"""
+
+THEIR SECOND TARGET — the best-paid job their CV ALREADY qualifies them
+for. This is not a consolation prize. Judge a listing against BOTH
+targets and report the better fit in `track`:
+
+{json.dumps(leverage, indent=2, sort_keys=True)}
+
+track_weighting is {weighting if weighting is not None else 50}/100,
+where 100 means they only want stretch roles and 0 means they only want
+the well-paid safe ones. Let it tilt the final score, not the honesty of
+the reasoning."""
+        if leverage else "")
+
     return f"""{SYSTEM}
 
-CANDIDATE TARGET PROFILE:
-{json.dumps(profile.get('target', {}), indent=2, sort_keys=True)}
+CANDIDATE TARGET PROFILE — the job they want to grow into:
+{json.dumps(profile.get('target', {}), indent=2, sort_keys=True)}{leverage_block}
 
 THEIR UNFAIR ADVANTAGE:
 {json.dumps(profile.get('angles', []), indent=2)}{resume_block}
@@ -234,6 +260,9 @@ def score_jobs(jobs, profile, batch_size=8, workers=SCORE_WORKERS):
                 "score_breakdown": breakdown,
                 "verdict": r.get("verdict", ""),
                 "stretch": bool(r.get("stretch")),
+                "track": (r.get("track")
+                          if r.get("track") in ("ideal", "leverage", "both")
+                          else None),
                 "angle": r.get("angle", ""),
                 "risk": r.get("risk") or None,
                 "evidence": r.get("evidence") or None,

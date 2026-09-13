@@ -679,3 +679,18 @@ section.band { padding: 1.75rem 0; border-bottom: 1px solid var(--rule); }
   color: var(--ink-2);
   white-space: nowrap;
 }
+
+
+/* Which of the two targets a listing matched. Only the leverage and
+   both cases are marked: "a job to grow into" is the default reading of
+   this board, so labelling it would be noise on most rows. */
+.track {
+  font-size: .6875rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: .1rem .35rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}

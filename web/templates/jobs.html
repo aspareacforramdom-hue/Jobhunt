@@ -29,6 +29,17 @@
     <input name="company" value="{{ filters.get('company','') }}" size="12">
   </label>
   <label class="field">
+    <span class="label">Show</span>
+    <select name="track">
+      {% for v, lbl in [('', 'both tracks'),
+                        ('ideal', 'jobs to grow into'),
+                        ('leverage', 'best paid right now')] %}
+        <option value="{{ v }}" {% if filters.get('track') == v %}selected{% endif %}>
+          {{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="field">
     <span class="label">Source</span>
     <select name="source">
       <option value="">any</option>
@@ -89,6 +100,13 @@
                            what this tool is for">↗</span>
             {% endif %}
             {% if j.closed %}{{ m.gone_tag() }}{% endif %}
+            {% if j.track == 'leverage' %}
+              <span class="track" title="Fits the best-paid job your CV
+                    already qualifies you for">pays now</span>
+            {% elif j.track == 'both' %}
+              <span class="track" title="Fits both: a step forward AND
+                    something you could get today">both</span>
+            {% endif %}
             {% if j.verdict %}
               <p class="note" style="margin-top: .25rem">{{ j.verdict }}</p>
             {% endif %}

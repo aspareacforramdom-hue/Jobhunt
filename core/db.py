@@ -306,20 +306,22 @@ def upsert_user_job(conn, user_id, job_id, scored):
     """Write one user's opinion of a job. Never touches another user's."""
     conn.execute(
         "INSERT INTO user_jobs (user_id, job_id, score, verdict, angle, "
-        "risk, stretch, score_breakdown_json, evidence, status, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,'new',?) "
+        "risk, stretch, score_breakdown_json, evidence, track, status, "
+        "updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,'new',?) "
         "ON CONFLICT(user_id, job_id) DO UPDATE SET "
         "score=excluded.score, verdict=excluded.verdict, "
         "angle=excluded.angle, risk=excluded.risk, "
         "stretch=excluded.stretch, "
         "score_breakdown_json=excluded.score_breakdown_json, "
-        "evidence=excluded.evidence, "
+        "evidence=excluded.evidence, track=excluded.track, "
         "updated_at=excluded.updated_at",
         (user_id, job_id, scored.get("score"), scored.get("verdict"),
          scored.get("angle"), scored.get("risk"),
          int(bool(scored.get("stretch"))),
          _j(scored.get("score_breakdown", {})),
-         scored.get("evidence") or None, now()))
+         scored.get("evidence") or None, scored.get("track") or None,
+         now()))
     conn.commit()
 
 
@@ -333,7 +335,8 @@ _JOB_COLS = ("j.id, j.url, j.title, j.company, j.location, j.source, "
 
 _JOIN_TAIL = """
          uj.score, uj.verdict, uj.angle, uj.risk, uj.stretch,
-         uj.score_breakdown_json, uj.evidence, uj.status, uj.ignored_reason,
+         uj.score_breakdown_json, uj.evidence, uj.track, uj.status,
+         uj.ignored_reason,
          uj.ignored_at, uj.updated_at,
          c.rating AS company_rating, c.review_count AS company_review_count,
          c.review_summary_json
@@ -381,7 +384,7 @@ def scores_for(conn, user_id, exclude_ignored=True):
 def list_user_jobs(conn, user_id, *, statuses=None, exclude_ignored=True,
                    min_score=None, company=None, source=None, since=None,
                    search=None, order="score", limit=None,
-                   include_closed=False):
+                   include_closed=False, track=None):
     sql, params = _JOIN, [user_id]
 
     if statuses:
@@ -406,6 +409,16 @@ def list_user_jobs(conn, user_id, *, statuses=None, exclude_ignored=True,
     if source:
         sql += " AND j.source = ?"
         params.append(source)
+    if track:
+        # The two-track intake is pointless if both land in one list
+        # sorted by score. A well-paid lateral move scores LOW against
+        # an ambitious target and that is the honest answer — it really
+        # is the weaker career step — but it buries exactly the jobs
+        # somebody with a salary floor asked to be shown. So they are
+        # filtered apart rather than ranked together, and "both" belongs
+        # in either list.
+        sql += " AND (uj.track = ? OR uj.track = 'both')"
+        params.append(track)
     if since:
         sql += " AND j.found_at >= ?"
         params.append(since)

@@ -504,3 +504,82 @@ def test_the_compiler_is_told_to_name_real_searchable_titles():
     assert "searchable" in COMPILE_SYSTEM.lower()
     assert "leverage_target" in COMPILE_SYSTEM
     assert "inference_note" in COMPILE_SYSTEM
+
+
+# ============================================================
+# The second track has to reach the board
+# ============================================================
+def test_the_shortlister_looks_for_both_targets():
+    """
+    The prefilter decides what the scorer is even allowed to read. A
+    leverage role that never clears the semantic floor is a role she
+    never sees, however well it pays — so both targets have to be
+    anchors. This was collected, stored, and then filtered out one step
+    before it could matter.
+    """
+    from core import semantic
+
+    got = semantic.anchors({
+        "target": {"role_family": "Process Excellence",
+                   "alt_titles": ["Continuous Improvement Manager"]},
+        "leverage_target": {"role_family": "Senior Operations Analyst",
+                            "alt_titles": ["MIS & Operations Analyst"]}})
+
+    assert "Process Excellence" in got
+    assert "Senior Operations Analyst" in got
+    assert "MIS & Operations Analyst" in got
+
+
+def test_the_scorer_is_given_both_targets():
+    from core import score
+
+    block = score._system({
+        "target": {"role_family": "Process Excellence"},
+        "leverage_target": {"role_family": "Senior Operations Analyst"},
+        "track_weighting": 40,
+        "weights": {"trajectory_fit": 100}, "dimension_definitions": {},
+        "angles": []})
+
+    assert "Senior Operations Analyst" in block
+    assert "40/100" in block
+
+
+def test_a_profile_with_one_target_is_unchanged(tmp_path):
+    """Everyone who filled in the old form still has one target, and
+    their scoring prompt must not grow an empty section."""
+    from core import score
+
+    block = score._system({
+        "target": {"role_family": "Product Management"},
+        "weights": {"trajectory_fit": 100}, "dimension_definitions": {},
+        "angles": []})
+
+    assert "SECOND TARGET" not in block
+
+
+def test_the_two_tracks_are_filtered_apart_not_ranked_together(tmp_path):
+    """
+    A well-paid lateral move scores LOW against an ambitious target, and
+    that is the honest answer — it really is the weaker career step.
+    Measured live: Process Excellence Manager 8.9, MIS Analyst 4.2. In
+    one list sorted by score the second never gets seen, which defeats
+    the whole point of asking about it.
+    """
+    from core import db, session
+
+    conn = db.connect(str(tmp_path / "t.db"))
+    uid, _ = session.create_account(conn, "w", "pw")
+    for i, (track, sc) in enumerate([("ideal", 8.9), ("both", 8.0),
+                                     ("leverage", 4.2)]):
+        jid = db.upsert_job(conn, {"url": f"u{i}", "title": f"J{i}",
+                                   "company": "C", "found_at": db.now()})
+        db.upsert_user_job(conn, uid, jid, {"score": sc, "track": track})
+
+    everything = db.list_user_jobs(conn, uid)
+    stretch = db.list_user_jobs(conn, uid, track="ideal")
+    paid = db.list_user_jobs(conn, uid, track="leverage")
+
+    assert len(everything) == 3
+    assert {r["track"] for r in stretch} == {"ideal", "both"}
+    assert {r["track"] for r in paid} == {"leverage", "both"}
+    conn.close()

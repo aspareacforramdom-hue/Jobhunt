@@ -51,6 +51,13 @@ def register(app, db_path=None):
                 since=_since(q.get("days")),
                 search=q.get("q") or None,
                 order=q.get("order") or "score",
+                # Two tracks, filtered apart rather than ranked together.
+                # A well-paid lateral move scores LOW against an ambitious
+                # target - honestly so, it IS the weaker career step - but
+                # ranking them in one list buries exactly the jobs somebody
+                # with a salary floor asked to see.
+                track=(q.get("track")
+                       if q.get("track") in ("ideal", "leverage") else None),
                 limit=LIST_LIMIT + 1)
             sources = [r["source"] for r in conn.execute(
                 "SELECT DISTINCT source FROM jobs WHERE source IS NOT NULL")]

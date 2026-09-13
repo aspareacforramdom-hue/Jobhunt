@@ -248,4 +248,15 @@ MIGRATIONS = [
     ALTER TABLE profiles ADD COLUMN track_weighting INTEGER;
     ALTER TABLE profiles ADD COLUMN inference_note TEXT;
     """,
+    # 11 - which of the two targets this job actually fits.
+    #
+    # The intake infers two: the job she wants to grow into, and the
+    # best-paid job her CV already sells. Without recording which one a
+    # listing matched, both land in one undifferentiated list and the
+    # distinction the whole two-track intake exists to draw is lost at
+    # the last step - she would be asked to work out for herself which
+    # of 40 cards were the ambitious ones.
+    """
+    ALTER TABLE user_jobs ADD COLUMN track TEXT;
+    """,
 ]
