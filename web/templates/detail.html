@@ -149,8 +149,12 @@
         </form>
       {% endif %}
 
+      {# Say it before they click. The whole point of checking links is
+         that the user stops finding out at the moment they had decided
+         to apply. #}
       <a href="{{ job.url|safe_url }}" target="_blank" rel="noopener noreferrer"
-         class="linklike">Open listing ↗</a>
+         class="linklike">{{ "Listing (taken down) ↗" if job.closed
+                              else "Open listing ↗" }}</a>
 
       <form method="post" action="/jobs/{{ job.id }}/ignore"
             class="push inline" style="gap: .4rem">

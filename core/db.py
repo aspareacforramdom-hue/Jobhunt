@@ -318,7 +318,8 @@ def upsert_user_job(conn, user_id, job_id, scored):
 # them: on an 800-job corpus that was 3.5MB moved to display 15 titles,
 # 96% of the payload. They are named explicitly now, and only the detail
 # page — which actually shows the text — asks for it.
-_JOB_COLS = "j.id, j.url, j.title, j.company, j.location, j.source, j.found_at"
+_JOB_COLS = ("j.id, j.url, j.title, j.company, j.location, j.source, "
+             "j.found_at, j.closed_at")
 
 _JOIN_TAIL = """
          uj.score, uj.verdict, uj.angle, uj.risk, uj.stretch,
@@ -341,6 +342,7 @@ def _row(r):
     d["score_breakdown"] = _unj(d.pop("score_breakdown_json", None), {})
     d["review_summary"] = _unj(d.pop("review_summary_json", None), None)
     d["stretch"] = bool(d.get("stretch"))
+    d["closed"] = bool(d.get("closed_at"))
     d["column"] = COLUMN_OF.get(d.get("status"), "new")
     return d
 
@@ -368,7 +370,8 @@ def scores_for(conn, user_id, exclude_ignored=True):
 
 def list_user_jobs(conn, user_id, *, statuses=None, exclude_ignored=True,
                    min_score=None, company=None, source=None, since=None,
-                   search=None, order="score", limit=None):
+                   search=None, order="score", limit=None,
+                   include_closed=False):
     sql, params = _JOIN, [user_id]
 
     if statuses:
@@ -376,6 +379,14 @@ def list_user_jobs(conn, user_id, *, statuses=None, exclude_ignored=True,
         params += list(statuses)
     elif exclude_ignored:
         sql += " AND uj.status != 'ignored'"
+    if not include_closed:
+        # A listing that has come down is noise on a board of things to
+        # apply to — 29% of these boards were already HTTP 404 before
+        # anything expired them. But once the user has acted on a role
+        # it is part of their pipeline and stays visible however dead
+        # the link is: you do not want the job you applied to on Monday
+        # silently disappearing on Friday.
+        sql += " AND (j.closed_at IS NULL OR uj.status != 'new')"
     if min_score is not None:
         sql += " AND uj.score >= ?"
         params.append(min_score)
@@ -403,21 +414,28 @@ def list_user_jobs(conn, user_id, *, statuses=None, exclude_ignored=True,
     return [_row(r) for r in conn.execute(sql, params)]
 
 
-def count_user_jobs(conn, user_id, *, statuses=None, min_score=None):
+def count_user_jobs(conn, user_id, *, statuses=None, min_score=None,
+                    include_closed=False):
     """
     How many, without fetching any of them.
 
     The board says "15 of 200" — it needs the 200, not the rows behind it.
     """
-    sql = "SELECT COUNT(*) n FROM user_jobs WHERE user_id = ?"
+    sql = ("SELECT COUNT(*) n FROM user_jobs uj "
+           "JOIN jobs j ON j.id = uj.job_id WHERE uj.user_id = ?")
     params = [user_id]
     if statuses:
-        sql += f" AND status IN ({','.join('?' * len(statuses))})"
+        sql += f" AND uj.status IN ({','.join('?' * len(statuses))})"
         params += list(statuses)
     else:
-        sql += " AND status != 'ignored'"
+        sql += " AND uj.status != 'ignored'"
+    if not include_closed:
+        # Must match list_user_jobs exactly. A count that disagrees with
+        # the rows underneath it is how a board ends up saying
+        # "15 of 200" above twelve listings.
+        sql += " AND (j.closed_at IS NULL OR uj.status != 'new')"
     if min_score is not None:
-        sql += " AND score >= ?"
+        sql += " AND uj.score >= ?"
         params.append(min_score)
     return conn.execute(sql, params).fetchone()["n"]
 
@@ -652,3 +670,106 @@ def recent_runs(conn, user_id, limit=10):
     return conn.execute(
         "SELECT * FROM runs WHERE user_id=? ORDER BY id DESC LIMIT ?",
         (user_id, limit)).fetchall()
+
+
+# ------------------------------------------------------------
+# Closing listings that are gone
+# ------------------------------------------------------------
+# Measured on the three live boards: 20 of 70 links were already HTTP
+# 404 and the median card was 31 days old. A board where one link in
+# three is dead is worse than no board, because the user only finds out
+# after deciding to apply.
+#
+# The first attempt at fixing that inferred closure for free. A
+# Greenhouse or Lever board answers with the company's complete current
+# list, so anything missing had surely been taken down — no probing, no
+# extra request. It closed 278 of 963 listings, and probing 60 of them
+# found 42 still answering HTTP 200 with a working apply button. A 70%
+# false positive rate, quietly deleting real opportunities.
+#
+# The cause was not pagination; the Lever API returns the same 19 rows
+# for mindtickle at any limit. Employers can UNLIST a posting while
+# leaving the direct link live and applicable, and a board read cannot
+# see the difference.
+#
+# So absence is a suspicion, never a verdict. It decides what the link
+# checker asks about first; only an HTTP answer sets closed_at.
+COMPLETE_LIST_SOURCES = frozenset(
+    {"greenhouse", "lever", "ashby", "smartrecruiters", "workable"})
+
+
+def mark_seen(conn, urls, when=None):
+    """Stamp last_seen_at on every listing this scan saw.
+
+    Every RAW row, not just the new ones. The scanner drops already
+    known listings before they reach upsert_job — which is precisely
+    why "still open" could not be inferred before this existed.
+
+    A listing seen again is not missing, so the suspicion is cleared.
+    """
+    stamp = when or now()
+    rows = [(stamp, normalize_url(u)) for u in urls if normalize_url(u)]
+    if not rows:
+        return 0
+    conn.executemany(
+        "UPDATE jobs SET last_seen_at = ?, missing_since = NULL "
+        "WHERE url = ?", rows)
+    return len(rows)
+
+
+def mark_missing(conn, source, company, when=None):
+    """Flag this company's listings that today's full board omitted.
+
+    Sets missing_since, NOT closed_at. See the note above: 70% of the
+    listings this identified were still live and applicable. All it
+    earns them is a place at the front of the link checker's queue.
+
+    Caller must only call this for a fetch that succeeded and returned
+    at least one row — an empty answer is what a 404, a timeout and a
+    rename all look like. scheduler._flag_missing enforces that.
+    """
+    if source not in COMPLETE_LIST_SOURCES:
+        raise ValueError(
+            f"{source} does not return a complete list; absence from it "
+            f"means nothing at all. Only {sorted(COMPLETE_LIST_SOURCES)} "
+            f"can even raise a suspicion this way.")
+    stamp = when or now()
+    cur = conn.execute(
+        "UPDATE jobs SET missing_since = ? "
+        "WHERE closed_at IS NULL AND missing_since IS NULL "
+        "AND source = ? AND LOWER(company) = ? "
+        "AND (last_seen_at IS NULL OR last_seen_at < ?)",
+        (stamp, source, (company or "").lower(), stamp))
+    return cur.rowcount
+
+
+def close_urls(conn, urls, when=None):
+    """Close listings the link checker PROVED are gone — 404, 410, or a
+    page that says so. This is the only thing that ever sets closed_at.
+    """
+    stamp = when or now()
+    rows = [(stamp, normalize_url(u)) for u in urls if normalize_url(u)]
+    if not rows:
+        return 0
+    before = closed_job_count(conn)
+    conn.executemany(
+        "UPDATE jobs SET closed_at = ? WHERE url = ? AND closed_at IS NULL",
+        rows)
+    return closed_job_count(conn) - before
+
+
+def open_job_count(conn):
+    return conn.execute(
+        "SELECT COUNT(*) n FROM jobs WHERE closed_at IS NULL").fetchone()["n"]
+
+
+def closed_job_count(conn):
+    return conn.execute(
+        "SELECT COUNT(*) n FROM jobs WHERE closed_at IS NOT NULL"
+    ).fetchone()["n"]
+
+
+def suspect_job_count(conn):
+    return conn.execute(
+        "SELECT COUNT(*) n FROM jobs "
+        "WHERE missing_since IS NOT NULL AND closed_at IS NULL").fetchone()["n"]

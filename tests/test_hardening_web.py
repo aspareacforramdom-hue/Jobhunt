@@ -274,3 +274,17 @@ def test_a_url_with_tracking_parameters_is_the_same_job(tmp_path):
         assert a == b
     finally:
         conn.close()
+
+
+def test_a_path_cannot_be_passed_where_a_flag_belongs():
+    """
+    create_app(some_path) binds the path to boot_scan, leaves db_path
+    None, and serves the REAL database. It happened: a scratch copy was
+    passed positionally and the portal came up on data/careerloop.db
+    with boot_scan truthy. A test that writes to the production
+    database is the worst outcome in this file.
+    """
+    from web.app import create_app
+
+    with pytest.raises(TypeError, match="must be a bool"):
+        create_app("/tmp/some.db")

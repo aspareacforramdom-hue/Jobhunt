@@ -13,6 +13,19 @@
 {% endmacro %}
 
 
+{% macro gone_tag() %}
+  {# A closed listing only stays on a board once you have acted on it,
+     so this is never noise - it is the answer to "what happened to the
+     one I applied to on Monday". Proven by an HTTP 404 or 410, never
+     inferred: absence from a company's board was wrong 70% of the
+     time, because employers unlist postings that still accept
+     applications. #}
+  <span class="gone" title="This posting has been taken down - the link
+                            returns 404. Kept because you acted on it.">
+    closed</span>
+{% endmacro %}
+
+
 {% macro entry(job, back="/", delay=0) %}
 <article class="entry" style="animation-delay: {{ delay }}ms">
   <div class="entry__top">
@@ -22,6 +35,7 @@
        and keeping it out of the meta line stops that line wrapping onto
        an orphaned separator. #}
     {% if job.stretch %}{{ stretch_tag() }}{% endif %}
+    {% if job.closed %}{{ gone_tag() }}{% endif %}
   </div>
 
   <p class="entry__meta">

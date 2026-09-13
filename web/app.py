@@ -26,6 +26,16 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 
 def create_app(boot_scan=True, dry=False, db_path=None):
+    # create_app(some_path) binds that path to boot_scan, leaves db_path
+    # None, and quietly serves the REAL database. It happened during
+    # testing: a scratch copy was passed positionally and the portal
+    # came up on data/careerloop.db instead, with boot_scan truthy. The
+    # symptom was a login that would not work; the risk is a test
+    # writing to the production database.
+    if not isinstance(boot_scan, bool):
+        raise TypeError(
+            "create_app(boot_scan, dry, db_path): boot_scan must be a bool. "
+            "To point the app at a database, pass db_path= by keyword.")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

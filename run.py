@@ -515,6 +515,24 @@ def cmd_doctor(args):
         sys.exit(1)
 
 
+def cmd_check_links(args):
+    """
+    Verify the links on everyone's board and close the ones proven gone.
+
+    Runs automatically at the end of every scan, 60 at a time. This is
+    the manual version for when you want the whole backlog cleared now.
+    """
+    from core import linkcheck
+
+    conn = db.connect()
+    limit = int(args[0]) if args else 500
+    before = db.closed_job_count(conn)
+    checked, closed = linkcheck.sweep(conn, limit=limit)
+    print(f"\n{checked} links checked, {closed} closed "
+          f"({before} were already closed, {db.closed_job_count(conn)} now)")
+    conn.close()
+
+
 COMMANDS = {
     "intake": cmd_intake,
     "calibrate": cmd_calibrate,
@@ -528,6 +546,7 @@ COMMANDS = {
     "publish": cmd_publish,
     "migrate": cmd_migrate,
     "doctor": cmd_doctor,
+    "check-links": cmd_check_links,
     "serve": cmd_serve,
 }
 

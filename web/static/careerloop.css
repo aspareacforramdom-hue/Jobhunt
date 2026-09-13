@@ -663,3 +663,19 @@ section.band { padding: 1.75rem 0; border-bottom: 1px solid var(--rule); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+
+/* A listing proven taken down (HTTP 404/410). Only ever seen on a job
+   the user already acted on - everything else leaves the board. Muted,
+   not alarming: it is a fact about the posting, not a problem with
+   their application. */
+.gone {
+  font-size: .6875rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: .1rem .35rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}

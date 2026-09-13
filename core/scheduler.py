@@ -30,8 +30,8 @@ from datetime import datetime, timedelta
 
 import yaml
 
-from core import (db, discover, filter as flt, firecrawl, notify, prefilter,
-                  reviews, score)
+from core import (db, discover, filter as flt, firecrawl, linkcheck,
+                  notify, prefilter, reviews, score)
 
 SLOTS = [(7, 0), (18, 0)]          # Asia/Kolkata
 MIN_GAP_HOURS = 3
@@ -157,6 +157,13 @@ def _remember_seeded(conn, terms, key=None):
     key = key or discover.BACKFILL_KEY
     merged = sorted(set(_seeded_terms(conn, key)) | set(terms))
     db.set_setting(conn, key, json.dumps(merged))
+
+
+# How many board links to verify per scan. At 8 workers a link
+# costs well under a second, so 60 adds a few seconds to a scan
+# that already takes minutes, and three scans clear a 180-link
+# backlog.
+LINKCHECK_PER_SCAN = 60
 
 
 class Scanner:
@@ -358,6 +365,16 @@ class Scanner:
                          discover.LINKEDIN_BACKFILL_KEY)
         self._set(found=len(raw), notes=notes, phase="filtering")
 
+        # Every raw row, including the ones dedup is about to drop:
+        # "we saw this again today" is the whole basis for knowing what
+        # is still open, and dedup throws those rows away.
+        stamp = db.now()
+        db.mark_seen(conn, [j.get("url") for j in raw], when=stamp)
+        suspect = self._flag_missing(conn, raw, stamp)
+        if suspect:
+            notes.append(f"{suspect} listings no longer on their board "
+                         f"— queued for checking")
+
         fresh = self._dedup(conn, raw)
         job_ids = {}
         for j in fresh:
@@ -371,7 +388,62 @@ class Scanner:
             self._score_for_user(conn, user, profiles[user["id"]],
                                  fresh, job_ids, kind)
 
+        # The free closure above only covers boards that answer in full.
+        # Sweep a slice of what is left, oldest first, so a backlog
+        # drains over several scans instead of hammering anyone once.
+        try:
+            checked, gone = linkcheck.sweep(conn, limit=LINKCHECK_PER_SCAN)
+            if gone:
+                notes.append(f"{gone} more closed after checking "
+                             f"{checked} links")
+        except Exception as e:                          # noqa: BLE001
+            # Never let housekeeping lose a scan that already succeeded.
+            print(f"  [linkcheck] skipped: {e}")
+
         self._set(phase="idle")
+
+    @staticmethod
+    def _flag_missing(conn, raw, stamp):
+        """
+        Flag listings that have vanished from a board we just read in
+        full, so the link checker asks about them first.
+
+        This used to close them outright, on the reasoning that a
+        Greenhouse or Lever board answers with the company's COMPLETE
+        current list. Measured, that was wrong in the way that matters:
+        it closed 278 of 963 listings and 42 of 60 probed were still
+        answering HTTP 200 with a working apply button. Employers unlist
+        postings while leaving the link live, and a board read cannot
+        tell that apart from a deletion.
+
+        So this raises a suspicion and nothing more. Only linkcheck,
+        having actually asked the page, sets closed_at.
+
+        The safety rule still holds: a company is only judged on a fetch
+        that returned rows. An empty answer is what a 404, a timeout and
+        a rename all look like, and flagging a whole board on one would
+        send the checker after hundreds of live listings.
+
+        Keyword sources — Indeed, LinkedIn, Naukri, Instahyre — return a
+        slice of a search, never a company's full list, so absence there
+        carries no information at all.
+        """
+        boards = {}
+        for job in raw:
+            src = job.get("source")
+            company = (job.get("company") or "").strip().lower()
+            if src in db.COMPLETE_LIST_SOURCES and company:
+                boards[(src, company)] = boards.get((src, company), 0) + 1
+
+        flagged = 0
+        for (src, company), seen in boards.items():
+            if seen:                # belt and braces; the key only exists
+                flagged += db.mark_missing(conn, src, company, when=stamp)
+        if flagged:
+            conn.commit()
+            print(f"  [expiry] {flagged} listings missing from "
+                  f"{len(boards)} boards — queued for checking")
+        return flagged
 
     def _dedup(self, conn, raw):
         """

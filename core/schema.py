@@ -187,4 +187,43 @@ MIGRATIONS = [
     """
     ALTER TABLE user_jobs ADD COLUMN evidence TEXT;
     """,
+    # 8 - when a listing was last seen, and when it was found to be gone.
+    #
+    # Measured on the three live boards: 20 of 70 links were already HTTP
+    # 404, a 29% dead rate, and the median card was 31 days old. Nothing
+    # in the codebase had ever expired a job, so the pool only grew and
+    # a person clicking through their board mostly met "page not found".
+    #
+    # last_seen_at is stamped on every raw row of every scan, including
+    # ones the scan already knows about - the dedup drops those before
+    # they reach upsert_job, which is exactly why this could not be
+    # inferred before. closed_at is set once, and never cleared by a
+    # later sighting; a reposted req arrives with a new url.
+    """
+    ALTER TABLE jobs ADD COLUMN last_seen_at TEXT;
+    ALTER TABLE jobs ADD COLUMN closed_at TEXT;
+    UPDATE jobs SET last_seen_at = found_at WHERE last_seen_at IS NULL;
+    CREATE INDEX IF NOT EXISTS jobs_open ON jobs (closed_at, source, company);
+    """,
+    # 9 - absence from a board is a SUSPICION, not a verdict.
+    #
+    # Migration 8 was built on the assumption that a Greenhouse or Lever
+    # board answers with the company's complete current list, so anything
+    # missing had been taken down. Measured against reality, that closed
+    # 278 of 963 listings and 60 of them were probed: 42 still answered
+    # HTTP 200 with a working apply button. A 70% false positive rate.
+    #
+    # The cause is not pagination - the Lever API returns the same 19
+    # rows for mindtickle at any limit - it is that employers can unlist
+    # a posting while leaving the direct link live and applicable. So
+    # absence proves nothing on its own, and acting on it removes real
+    # opportunities from somebody's board.
+    #
+    # missing_since records the suspicion. It decides what the link
+    # checker looks at FIRST; only an HTTP answer ever sets closed_at.
+    """
+    ALTER TABLE jobs ADD COLUMN missing_since TEXT;
+    CREATE INDEX IF NOT EXISTS jobs_missing ON jobs (missing_since)
+        WHERE closed_at IS NULL;
+    """,
 ]
