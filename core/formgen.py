@@ -98,6 +98,67 @@ function run() {{ buildForm(); }}
 """
 
 
+def gemini_prompt(schema, known=None):
+    """The same form, as an instruction for Gemini to build in Workspace.
+
+    Third route to the same form, because the other two both have a
+    cost: Apps Script asks a non-technical person to paste code and
+    approve permissions, and building it by hand is 22 questions retyped
+    without a slip. Gemini can create the form in the user's own Drive.
+
+    The prompt is generated rather than written, for the same reason the
+    script is: the question wording is the join key between the form and
+    the profile, so it can only ever come from the schema.
+    """
+    known = known or {}
+    out = [
+        "Create a Google Form in my Google account with the title",
+        '"Career Loop - job search intake".',
+        "",
+        "Set the form description to:",
+        "  This builds a job search tuned to you. There are two tracks and",
+        "  they are scored separately. TRACK 1 is the job you want to grow",
+        "  into. TRACK 2 is the best-paid job your CV already qualifies you",
+        "  for. Answer both honestly - short answers are fine. The only",
+        "  wrong answer is a flattering one, because the search runs on",
+        "  what you write here.",
+        "",
+        "RULES, and the first one matters more than the rest:",
+        "",
+        "1. Use each question's wording EXACTLY as written below, character",
+        "   for character. Do not reword, shorten, correct, rephrase or",
+        "   improve anything. A separate program reads the answers back by",
+        "   matching on this text, so a single changed word means that",
+        "   answer is silently discarded.",
+        "2. Keep the questions in the order given.",
+        "3. Use the answer type named in brackets for each question:",
+        "   Paragraph = long answer text, Short answer = short answer text,",
+        "   Multiple choice = pick one, Checkboxes = pick many.",
+        "4. For Multiple choice and Checkboxes, use exactly the options",
+        "   listed under the question, in that order, and add no others.",
+        "5. Make every question OPTIONAL, not required.",
+        "6. Do not collect email addresses. Turn the progress bar on.",
+        "7. Do not add any questions of your own, and do not add section",
+        "   headers, page breaks or images.",
+        "",
+        "When you are done, give me the link to fill in the form and the",
+        "link to edit it.",
+        "",
+        "Here are the questions.",
+        "",
+    ]
+    for i, d in enumerate(schema.get("dimensions", []), 1):
+        ask = " ".join((d.get("ask") or "").split())
+        out.append(f"{i}. [{TYPES.get(d.get('type'), 'Paragraph')}] {ask}")
+        for o in d.get("options", []):
+            out.append(f"     - {o}")
+        hint = _hint(d, known).strip()
+        if hint:
+            out.append(f"     (help text: {hint.strip('() ')})")
+        out.append("")
+    return "\n".join(out)
+
+
 def plain_text(schema):
     """The same questions as a list, for anyone building the form by hand
     or answering over a chat."""

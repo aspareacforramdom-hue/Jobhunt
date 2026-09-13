@@ -559,14 +559,18 @@ def cmd_form(args):
         f.write(formgen.apps_script(schema, known=known))
     with open("intake_questions.txt", "w", encoding="utf-8") as f:
         f.write(formgen.plain_text(schema))
+    with open("intake_gemini_prompt.txt", "w", encoding="utf-8") as f:
+        f.write(formgen.gemini_prompt(schema, known=known))
 
     n = len(schema.get("dimensions", []))
-    print("Wrote intake_form.gs (%d questions) and intake_questions.txt" % n)
+    print("Wrote %d questions to three files:" % n)
+    print("  intake_form.gs            paste into script.google.com")
+    print("  intake_gemini_prompt.txt  paste into Gemini")
+    print("  intake_questions.txt      just the questions, to read")
     print("")
-    print("  1. open script.google.com and click New project")
-    print("  2. delete what is there, paste all of intake_form.gs")
-    print("  3. click Run, approve access when asked")
-    print("  4. the form link is printed in the box at the bottom")
+    print("Easiest route: paste intake_gemini_prompt.txt into Gemini and")
+    print("ask it to build the form. Or paste intake_form.gs into")
+    print("script.google.com and press Run.")
 
 
 COMMANDS = {
