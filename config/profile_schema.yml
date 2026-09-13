@@ -1,193 +1,418 @@
 # ============================================================
-# PROFILE SCHEMA
-# Every dimension the intake must resolve before searching.
+# PROFILE SCHEMA — the questions, and what each one is FOR.
 #
-# 'compiles_to' is the discipline: an answer that doesn't become
-# a filter, a weight, or an angle is noise and gets dropped.
+# 'compiles_to' is the discipline: an answer that doesn't become a
+# filter, a weight, an angle or a signal about the person is noise and
+# gets dropped.
 #
-# TWO TRACKS. The tool was built to hunt one thing — the role above
-# your current level, the stretch — and it scores a well-paid sideways
-# move as a NEAR MISS. For somebody with a mortgage and three months'
-# notice that is the wrong instinct half the time. So the profile now
-# carries two targets:
+#   filter   binary reject, no judgement
+#   weight   how much a scoring dimension counts
+#   angle    narrative fuel for the application
+#   infer    evidence the compiler reads to work out WHICH JOBS to hunt
 #
-#   ideal     the job she wants to grow into, worth a stretch
-#   leverage  the best-paid job her CV already qualifies her for
+# ------------------------------------------------------------
+# WHY THIS IS A QUIZ AND NOT AN INTERVIEW
 #
-# Same listing, two verdicts, one LLM call — the listing text is what
-# costs money and it is sent once either way. 'track' below says which
-# target an answer belongs to; questions with no track feed both.
+# The first version asked things like "what can you say that 95% of
+# applicants cannot?" That is an interview question. It makes a person
+# freeze, and then write something performed rather than true — and this
+# whole engine runs on what they write, so a flattering answer produces
+# a flattering, useless search.
+#
+# It also asked her to NAME the job she wants. Most people cannot. They
+# know they liked one Tuesday and hated another; the job title that
+# explains why is exactly the thing they are hiring this tool to find.
+# Asking for the answer up front means only people who already know get
+# helped.
+#
+# So: almost every question is multiple choice, about CONCRETE
+# situations rather than self-assessment. "Which of these days would you
+# enjoy most" beats "are you detail-oriented", because people are honest
+# about preferences and flattering about traits. The compiler reverse-
+# engineers the job families from the pattern of answers.
+#
+# The few free-text questions left are stories, not tests: "what do
+# people at work always come to you for" is the same information as
+# "what is your unfair advantage", and it is answerable.
 # ============================================================
 
 dimensions:
 
-  # ---------- WHO SHE IS TODAY (facts, not preferences) ----------
-  # The scorer needs a floor to measure a stretch FROM. Without this it
-  # is guessing her level from job titles on a CV, and Indian titles
-  # inflate badly - a "Senior Manager" at one firm is an IC at another.
+  # =========================================================
+  # PART 1 — a few quick facts. Five questions, then it gets fun.
+  # =========================================================
   - id: current_role
-    ask: "What is your current job title, and how many years have you
-          been working in total?"
+    ask: "First, the boring bit. What is your current job title, and how
+          many years have you been working in total?"
     compiles_to: filter
     type: text
 
   - id: current_ctc
-    ask: "What is your current CTC? This is only used to judge whether a
-          job is actually a raise - it is never sent anywhere."
+    ask: "What is your current CTC, roughly? Only used to work out
+          whether a job is actually a raise. It never leaves this laptop."
     compiles_to: filter
     type: number
     unit: "LPA"
-
-  # ---------- HARD FILTERS (binary reject) ----------
-  - id: location
-    ask: "Which cities would you actually work in? Be honest about
-          relocation, and say 'remote only' if that's the truth."
-    compiles_to: filter
-    type: text
 
   - id: min_ctc
-    ask: "Below what CTC would you say no, even to a great role?"
+    ask: "What is the lowest salary you would say yes to, for a job you
+          genuinely wanted?"
     compiles_to: filter
     type: number
     unit: "LPA"
 
-  - id: notice_reality
-    ask: "How soon can you actually start?"
-    compiles_to: filter
-    type: single
-    options: ["Immediately", "1 month", "2-3 months", "Flexible"]
-
-  # ---------- TRACK A: THE IDEAL JOB ----------
-  - id: ideal_role
-    ask: "TRACK 1 - THE JOB YOU WANT. What role do you want to be doing
-          in two years? Give the job title if you know it, or describe
-          the work if you don't."
-    compiles_to: filter
-    track: ideal
-    type: text
-
-  - id: ideal_why
-    ask: "What about that work appeals to you that your current job
-          doesn't give you?"
-    compiles_to: weight
-    track: ideal
-    type: text
-
-  - id: ideal_gap
-    ask: "What do you think is missing from your CV for that role right
-          now? Answer honestly - this decides how far a stretch we
-          reach for."
-    compiles_to: weight
-    track: ideal
-    type: text
-
-  # ---------- TRACK B: THE WELL-PAID JOB SHE CAN GET NOW ----------
-  - id: leverage_roles
-    ask: "TRACK 2 - THE BEST-PAID JOB YOU COULD GET TODAY. Which job
-          titles could you walk into right now with the experience you
-          already have? List every one you would accept, even the boring
-          ones."
-    compiles_to: filter
-    track: leverage
-    type: text
-
-  - id: leverage_floor
-    ask: "For that kind of role, what salary would make it clearly worth
-          moving for?"
-    compiles_to: filter
-    track: leverage
-    type: number
-    unit: "LPA"
-
-  - id: leverage_limits
-    ask: "Is there any well-paid job you would refuse on principle, even
-          for good money? Say so plainly."
-    compiles_to: filter
-    track: leverage
-    type: text
-
-  # ---------- WHICH TRACK MATTERS MORE ----------
-  - id: track_balance
-    ask: "Right now, which matters more?"
-    compiles_to: weight
-    type: single
-    options: ["The right job, money second",
-              "Mostly the right job, but pay must not drop",
-              "Even split - show me both",
-              "Mostly the money, but not a dead end",
-              "The money, clearly"]
-
-  # ---------- SCORE WEIGHTS ----------
-  - id: build_vs_operate
-    ask: "Do you want to build new things, or improve existing systems?"
-    compiles_to: weight
-    type: single
-    options: ["Build from zero", "Mostly build", "Mostly improve", "Improve/optimise"]
-
-  - id: risk_appetite
-    ask: "Early-stage chaos or established company structure?"
-    compiles_to: weight
-    type: single
-    options: ["Seed/Series A", "Series B-C", "Late stage", "Large enterprise"]
-
-  - id: growth_vs_comfort
-    ask: "Would you take a harder role at lower pay if it moved you faster?"
-    compiles_to: weight
-    type: single
-    options: ["Yes, clearly", "Maybe, depends", "No, pay matters now"]
-
-  # Deliberately open text, not a menu. A fixed industry list is a
-  # hardcoded career target wearing a costume: whoever writes the options
-  # decides which fields exist, and everyone whose field is missing picks
-  # the least wrong box. The compiler reads the answer and invents the
-  # scoring dimensions from it.
-  - id: domain_pull
-    ask: "What subject matter would you genuinely enjoy working on daily?
-          Name it in your own words."
-    compiles_to: weight
-    type: text
-
-  # ---------- COMFORT FACTORS ----------
-  - id: work_mode
-    ask: "What's your real preference on office days?"
-    compiles_to: weight
-    type: single
-    options: ["Fully remote", "1-2 days office", "3-4 days office", "Don't care"]
-
-  - id: culture_dealbreaker
-    ask: "What would make you quit within 6 months?"
+  - id: location
+    ask: "Where would you actually work?"
     compiles_to: filter
     type: multi
-    options: ["Rigid hierarchy", "No autonomy", "Constant firefighting",
-              "Formal dress code", "Heavy travel", "Long commute",
-              "Night shifts / US hours", "None of these"]
+    options: ["Bangalore - office or hybrid is fine",
+              "Fully remote, anywhere in India",
+              "Bangalore only, and only if the commute is short",
+              "I would relocate for the right job",
+              "Remote only - I do not want to go to an office"]
 
-  # A woman job-hunting in India gets asked about marriage plans and
-  # gets routed into "flexible" roles that pay less. Naming what she
-  # will not accept turns that into a filter instead of a surprise in
-  # the third round.
-  - id: hard_no
-    ask: "Anything else that is an absolute no? Night shifts, heavy
-          travel, a specific company, a specific kind of team - name it."
+  - id: notice_reality
+    ask: "Realistically, when could you start?"
     compiles_to: filter
-    type: text
+    type: single
+    options: ["Right away", "In about a month", "In 2-3 months",
+              "3 months or more", "I am in no hurry - the right job or nothing"]
 
-  # ---------- APPLICATION ANGLES (narrative fuel) ----------
-  - id: proof_points
-    ask: "Name 2-3 things you have actually shipped, run or fixed. Real
-          ones, with numbers if you have them - how many users, how much
-          money, how much faster."
+  # =========================================================
+  # PART 2 — what kind of work actually lights you up.
+  # Behaviour and preference, never self-assessment.
+  # =========================================================
+  - id: good_day
+    ask: "Picture a workday that flew by and left you feeling good. What
+          were you most likely doing?"
+    compiles_to: infer
+    type: multi
+    options: ["Solving a puzzle nobody else could crack",
+              "Making something messy become clean and organised",
+              "Building or designing something new from scratch",
+              "Helping someone and seeing it land",
+              "Digging through numbers until the answer appeared",
+              "Convincing a room and winning them over",
+              "Writing or explaining something really clearly",
+              "Fixing a broken thing and making it run properly",
+              "Planning something complicated so it all fit together",
+              "Learning something completely new"]
+
+  - id: lose_track_of_time
+    ask: "Which of these makes you lose track of time?"
+    compiles_to: infer
+    type: multi
+    options: ["A spreadsheet that finally balances",
+              "A design or layout that finally looks right",
+              "A conversation where you changed someone's mind",
+              "Reading about something you find interesting",
+              "Tidying, sorting or systemising something",
+              "Making a process faster",
+              "Teaching or explaining something to someone",
+              "Hunting down why something went wrong"]
+
+  - id: hand_me_the_problem
+    ask: "Two problems land on your desk. Which do you pick up first?"
+    compiles_to: infer
+    type: single
+    options: ["The one nobody understands yet",
+              "The one that is urgent and clearly defined",
+              "The one where people are unhappy and need sorting out",
+              "The one where the numbers do not add up",
+              "The one that needs something built",
+              "The one that needs a decision nobody wants to make"]
+
+  - id: proud_of
+    ask: "When you have done something at work you were quietly proud
+          of, what did it usually look like?"
+    compiles_to: angle
+    type: multi
+    options: ["Something I built or set up that is still being used",
+              "A mess I cleaned up",
+              "A number that went up or down because of me",
+              "A person or team I helped get better",
+              "A decision I made that turned out right",
+              "Something I shipped on time when it looked impossible",
+              "Something I made much simpler than it was"]
+
+  - id: compliment
+    ask: "Which compliment would mean the most to you?"
+    compiles_to: infer
+    type: single
+    options: ["\"Nobody thinks about this as carefully as you do\"",
+              "\"You made this so much simpler\"",
+              "\"I could not have done this without you\"",
+              "\"You were right\"",
+              "\"You built something that lasted\"",
+              "\"You are the only one who actually understands this\"",
+              "\"Everything runs better since you took over\""]
+
+  # =========================================================
+  # PART 3 — how you like to work. This decides the environment.
+  # =========================================================
+  - id: structure_pref
+    ask: "Which job would you rather have?"
+    compiles_to: weight
+    type: single
+    options: ["Clear goals and a clear process - I know what good looks like",
+              "Clear goals, but I decide how",
+              "Vague goals and total freedom - I will figure it out",
+              "Honestly, it depends on the day"]
+
+  - id: pace_pref
+    ask: "What pace suits you?"
+    compiles_to: weight
+    type: single
+    options: ["Steady and predictable, few surprises",
+              "Mostly steady with the odd busy stretch",
+              "Fast, changing, a bit chaotic - I like the buzz",
+              "Intense bursts, then room to breathe"]
+
+  - id: people_pref
+    ask: "How much of your day would you like to involve other people?"
+    compiles_to: weight
+    type: single
+    options: ["Mostly on my own, deep in the work",
+              "Small team, same few people, quiet",
+              "Lots of collaboration across teams",
+              "Constantly with people - that is the fun part"]
+
+  - id: variety_pref
+    ask: "Which sounds better?"
+    compiles_to: weight
+    type: single
+    options: ["Getting really, really good at one thing",
+              "A few related things I know well",
+              "Something different every few months",
+              "No two days the same"]
+
+  - id: decide_how
+    ask: "When you have to make a call, what do you reach for?"
+    compiles_to: infer
+    type: single
+    options: ["The data - show me the numbers",
+              "My gut - I usually know",
+              "Ask the people affected",
+              "Find out what worked last time",
+              "Think it through carefully alone, then decide"]
+
+  - id: ownership_pref
+    ask: "Which would you rather be?"
+    compiles_to: weight
+    type: single
+    options: ["The person who owns one thing completely",
+              "The person who makes a big machine run smoothly",
+              "The expert everyone asks",
+              "The person who decides what the team does next",
+              "The person who quietly makes everyone else better"]
+
+  # =========================================================
+  # PART 4 — what drains you. The strongest signal in the form,
+  # because people are far more accurate about what they hate.
+  # =========================================================
+  - id: drains_you
+    ask: "Which of these would genuinely ruin your week? Tick as many as
+          are true."
+    compiles_to: filter
+    type: multi
+    options: ["Being interrupted all day",
+              "Having to sell or chase targets",
+              "Repetitive work with no thinking in it",
+              "Office politics and managing upwards",
+              "Being micromanaged",
+              "No clear answer to what I am supposed to do",
+              "Sitting in meetings all day",
+              "Working alone with nobody to talk to",
+              "Being responsible for something I cannot control",
+              "Constant firefighting and emergencies",
+              "Doing the same thing I did five years ago",
+              "Late night calls with another country"]
+
+  - id: worst_boss
+    ask: "Which kind of manager would make you quit?"
+    compiles_to: filter
+    type: multi
+    options: ["Checks everything I do",
+              "Never available when I need a decision",
+              "Changes their mind constantly",
+              "Takes credit for my work",
+              "Only cares about numbers, not people",
+              "Avoids hard conversations",
+              "Expects me online at all hours"]
+
+  - id: past_job_wrong
+    ask: "Think of a job or a stretch at work you did not enjoy. What was
+          actually wrong with it?"
     compiles_to: angle
     type: text
 
-  - id: unfair_advantage
-    ask: "What can you say that 95% of other applicants cannot? It can be
-          a skill, a domain, a language, a market you know, anything."
+  # =========================================================
+  # PART 5 — what she is actually chasing. The expectations.
+  # =========================================================
+  - id: chasing
+    ask: "What are you really hoping this next job gives you? Pick up to
+          three."
+    compiles_to: weight
+    type: multi
+    options: ["More money, plainly",
+              "Work I find genuinely interesting",
+              "A title that reflects what I actually do",
+              "Learning something that makes me more valuable",
+              "Stability and security",
+              "Time and energy left over for my life",
+              "Respect - being taken seriously",
+              "Doing something that matters to someone",
+              "A path to leading a team",
+              "Getting out of where I am"]
+
+  - id: two_years
+    ask: "It is two years from now and this move worked out beautifully.
+          What is true?"
+    compiles_to: infer
+    type: multi
+    options: ["I am earning significantly more",
+              "I am doing work I find genuinely interesting",
+              "I am senior to where I am now",
+              "I am known as good at something specific",
+              "I have a team",
+              "I finish at a reasonable hour and I am fine",
+              "I changed field completely and it worked",
+              "I have options - people want to hire me"]
+
+  - id: tradeoff
+    ask: "A job offers everything you want but 20% less money. What do
+          you do?"
+    compiles_to: weight
+    type: single
+    options: ["Take it - the work matters more",
+              "Take it if the money catches up within a year",
+              "Negotiate hard, then probably take it",
+              "Probably not - money matters right now",
+              "No - I am not going backwards on pay"]
+
+  - id: track_balance
+    ask: "Two job lists. One has jobs you would love but would have to
+          stretch for. The other has jobs you could get comfortably that
+          pay well. Which do you want to see?"
+    compiles_to: weight
+    type: single
+    options: ["Mostly the stretch ones - aim high",
+              "More stretch than safe, but show me both",
+              "An even mix, I will judge each one",
+              "More safe than stretch, but show me both",
+              "Mostly the well-paid ones - I want a solid move"]
+
+  # =========================================================
+  # PART 6 — the two tracks, in human language.
+  # No job titles required from her: the compiler works those out.
+  # =========================================================
+  - id: ideal_direction
+    ask: "TRACK 1, THE JOB YOU WANT. Forget titles and whether you are
+          qualified. If you could spend your working day doing anything,
+          which of these is closest?"
+    compiles_to: infer
+    track: ideal
+    type: multi
+    options: ["Building or creating things",
+              "Analysing and finding out what is true",
+              "Organising and making things run properly",
+              "Helping and developing people",
+              "Designing how something looks or feels",
+              "Persuading, negotiating, winning business",
+              "Writing, explaining, teaching",
+              "Leading, deciding, being accountable",
+              "Working with money, risk or rules",
+              "Working closely with technology"]
+
+  - id: ideal_freehand
+    ask: "Anything you want to add about that? Even half an idea is
+          useful - 'something in design but not graphic design', 'I keep
+          thinking about HR', that sort of thing."
+    compiles_to: infer
+    track: ideal
+    type: text
+
+  - id: ideal_blocker
+    ask: "What do you think is stopping you from getting that kind of job
+          today?"
+    compiles_to: weight
+    track: ideal
+    type: multi
+    options: ["I do not have the right experience yet",
+              "I do not have the right qualification or certificate",
+              "Nobody would take me seriously for it",
+              "I do not actually know what the job is called",
+              "It would mean a pay cut",
+              "Nothing really - I just have not looked properly",
+              "I am not sure I am good enough"]
+
+  - id: leverage_comfort
+    ask: "TRACK 2, THE WELL-PAID JOB YOU COULD GET NOW. Someone offers
+          you more money to do roughly what you already do. Your honest
+          reaction?"
+    compiles_to: weight
+    track: leverage
+    type: single
+    options: ["Yes please, that is exactly what I want",
+              "Happily, if the company and people are better",
+              "Only if it is a lot more money",
+              "Only as a stepping stone to something else",
+              "No - I want to change what I do, not where I do it"]
+
+  - id: leverage_roles
+    ask: "Are there any job titles you already know you could do? List
+          any that come to mind, even the dull ones. Leave it blank if
+          you are not sure - we will work it out from your CV."
+    compiles_to: filter
+    track: leverage
+    type: text
+
+  - id: leverage_refuse
+    ask: "Is there any well-paid job you would turn down on principle?"
+    compiles_to: filter
+    track: leverage
+    type: multi
+    options: ["Anything with sales targets",
+              "Anything requiring night shifts or US hours",
+              "Anything with heavy travel",
+              "Anything back in a field I deliberately left",
+              "Anything at a company I think behaves badly",
+              "Nothing really - good money is good money"]
+
+  # =========================================================
+  # PART 7 — limits and loose ends.
+  # =========================================================
+  - id: work_mode
+    ask: "Office days - what do you actually want?"
+    compiles_to: weight
+    type: single
+    options: ["Fully remote", "1-2 days in office", "3-4 days in office",
+              "Every day in office is fine", "I genuinely do not mind"]
+
+  - id: hard_no
+    ask: "Anything that is an absolute no? A company, an industry, a kind
+          of team, a commute, anything at all."
+    compiles_to: filter
+    type: text
+
+  # =========================================================
+  # PART 8 — two easy stories. Not tests.
+  # =========================================================
+  - id: come_to_you_for
+    ask: "What do people at work always come to YOU for? However small,
+          however odd."
+    compiles_to: angle
+    type: text
+
+  - id: proof_points
+    ask: "Name one or two things you have actually done at work that you
+          would happily tell someone about. Numbers if you have them, but
+          a plain sentence is fine."
     compiles_to: angle
     type: text
 
   - id: why_now
-    ask: "Why are you switching now, in one honest sentence?"
+    ask: "Last one. Why are you looking now?"
     compiles_to: angle
     type: text
 

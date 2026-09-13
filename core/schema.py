@@ -226,4 +226,26 @@ MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS jobs_missing ON jobs (missing_since)
         WHERE closed_at IS NULL;
     """,
+    # 10 - the second target, and the reasoning behind both.
+    #
+    # The intake became a preference quiz that never asks "what job do
+    # you want", because most people cannot answer that - working out
+    # the title that fits you is the thing this tool is for. The
+    # compiler infers TWO targets from the pattern of answers: the
+    # direction worth stretching for, and the best-paid job the CV
+    # already sells.
+    #
+    # save_profile persisted neither. It writes a fixed column list, so
+    # leverage_target, track_weighting and inference_note were computed,
+    # returned, and dropped on the floor at the moment of saving - no
+    # error, just half the feature quietly missing.
+    #
+    # inference_note is kept because an inferred career direction the
+    # person cannot see is one they cannot disagree with, and this one
+    # is a guess about somebody's life made from a questionnaire.
+    """
+    ALTER TABLE profiles ADD COLUMN leverage_target_json TEXT;
+    ALTER TABLE profiles ADD COLUMN track_weighting INTEGER;
+    ALTER TABLE profiles ADD COLUMN inference_note TEXT;
+    """,
 ]

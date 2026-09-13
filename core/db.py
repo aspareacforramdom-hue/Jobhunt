@@ -174,8 +174,9 @@ def save_profile(conn, user_id, profile):
     conn.execute(
         "INSERT INTO profiles (user_id, target_json, hard_filters_json, "
         "weights_json, dimension_definitions_json, angles_json, "
-        "search_terms_json, dropped_json, updated_at, resume_text) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?) "
+        "search_terms_json, dropped_json, updated_at, resume_text, "
+        "leverage_target_json, track_weighting, inference_note) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(user_id) DO UPDATE SET "
         "target_json=excluded.target_json, "
         "hard_filters_json=excluded.hard_filters_json, "
@@ -187,13 +188,19 @@ def save_profile(conn, user_id, profile):
         "updated_at=excluded.updated_at, "
         # COALESCE, so saving a profile without a CV — which every
         # intake-form upload does — never wipes a CV already stored.
-        "resume_text=COALESCE(excluded.resume_text, profiles.resume_text)",
+        "resume_text=COALESCE(excluded.resume_text, profiles.resume_text), "
+        "leverage_target_json=excluded.leverage_target_json, "
+        "track_weighting=excluded.track_weighting, "
+        "inference_note=excluded.inference_note",
         (user_id, _j(profile.get("target", {})),
          _j(profile.get("hard_filters", {})), _j(profile.get("weights", {})),
          _j(profile.get("dimension_definitions", {})),
          _j(profile.get("angles", [])), _j(profile.get("search_terms", [])),
          _j(profile.get("dropped", [])), now(),
-         (profile.get("resume_text") or None)))
+         (profile.get("resume_text") or None),
+         _j(profile.get("leverage_target", {})),
+         profile.get("track_weighting"),
+         profile.get("inference_note")))
     conn.commit()
     return profile
 
@@ -212,6 +219,9 @@ def load_profile(conn, user_id):
         "search_terms": _unj(r["search_terms_json"], []),
         "dropped": _unj(r["dropped_json"], []),
         "resume_text": r["resume_text"],
+        "leverage_target": _unj(r["leverage_target_json"], {}),
+        "track_weighting": r["track_weighting"],
+        "inference_note": r["inference_note"],
         "updated_at": r["updated_at"],
     }
 

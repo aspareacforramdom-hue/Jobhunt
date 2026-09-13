@@ -415,3 +415,92 @@ def test_the_prompt_tells_the_model_where_help_text_goes():
 
     assert "DESCRIPTION FIELD" in prompt
     assert "NOT be appended to the question title" in prompt
+
+
+# ============================================================
+# The quiz, and the two targets it infers
+# ============================================================
+def test_the_form_never_asks_her_to_name_the_job():
+    """
+    The point of the rewrite. Most people cannot name the job that fits
+    them — working it out is what they are here for — so asking up front
+    only helps the people who already knew. The compiler infers it from
+    what they enjoy and what drains them instead.
+    """
+    import yaml
+
+    schema = yaml.safe_load(
+        open("config/profile_schema.yml", encoding="utf-8"))
+    asks = " ".join(d["ask"].lower() for d in schema["dimensions"])
+
+    assert "what role do you want to be doing" not in asks
+    assert "95% of" not in asks, "that is an interview question"
+
+
+def test_it_is_mostly_ticking_boxes():
+    """A form that takes effort is a form she abandons halfway."""
+    import yaml
+
+    schema = yaml.safe_load(
+        open("config/profile_schema.yml", encoding="utf-8"))
+    dims = schema["dimensions"]
+    typing = [d for d in dims if d.get("type") == "text"]
+
+    assert len(typing) / len(dims) < 0.3, "too much typing"
+    assert len(dims) >= 25, "too thin to infer a career from"
+
+
+def test_what_drains_her_is_a_filter_not_a_preference():
+    """
+    The most reliable answers in the form. People flatter themselves
+    about strengths and are brutally accurate about what they hate — so
+    someone who ticked "having to sell or chase targets" must never be
+    shown a role with a quota, however well it pays.
+    """
+    import yaml
+
+    schema = yaml.safe_load(
+        open("config/profile_schema.yml", encoding="utf-8"))
+    by_id = {d["id"]: d for d in schema["dimensions"]}
+
+    assert by_id["drains_you"]["compiles_to"] == "filter"
+    assert by_id["worst_boss"]["compiles_to"] == "filter"
+    assert by_id["leverage_refuse"]["compiles_to"] == "filter"
+
+
+def test_both_targets_survive_being_saved(tmp_path):
+    """
+    They did not. save_profile writes a fixed column list, so
+    leverage_target, track_weighting and inference_note were computed by
+    the compiler, returned, and dropped on the floor at the moment of
+    saving — no error, just half the feature quietly missing.
+    """
+    from core import db, session
+
+    conn = db.connect(str(tmp_path / "p.db"))
+    uid, _ = session.create_account(conn, "wife", "pw")
+    db.save_profile(conn, uid, {
+        "target": {"role_family": "Process Excellence"},
+        "leverage_target": {"role_family": "Operations Analyst"},
+        "track_weighting": 40,
+        "inference_note": "why we think so",
+        "weights": {"trajectory_fit": 100}, "hard_filters": {},
+        "dimension_definitions": {}, "angles": []})
+
+    got = db.load_profile(conn, uid)
+
+    assert got["leverage_target"]["role_family"] == "Operations Analyst"
+    assert got["track_weighting"] == 40
+    assert got["inference_note"] == "why we think so"
+    conn.close()
+
+
+def test_the_compiler_is_told_to_name_real_searchable_titles():
+    """"Something creative" is not a job search. The inferred titles
+    become search terms on Naukri and LinkedIn, so they have to be
+    titles that actually appear there."""
+    from core.intake import COMPILE_SYSTEM
+
+    assert "searchable" in COMPILE_SYSTEM.lower()
+    assert "leverage_target" in COMPILE_SYSTEM
+    assert "inference_note" in COMPILE_SYSTEM

@@ -1,78 +1,224 @@
 CAREER LOOP INTAKE
 Do not edit the question wording — the importer matches on it.
 
-1. [Paragraph] What is your current job title, and how many years have you been working in total?
+1. [Paragraph] First, the boring bit. What is your current job title, and how many years have you been working in total?
 
-2. [Short answer] What is your current CTC? This is only used to judge whether a job is actually a raise - it is never sent anywhere.
+2. [Short answer] What is your current CTC, roughly? Only used to work out whether a job is actually a raise. It never leaves this laptop.
 
-3. [Paragraph] Which cities would you actually work in? Be honest about relocation, and say 'remote only' if that's the truth.
+3. [Short answer] What is the lowest salary you would say yes to, for a job you genuinely wanted?
 
-4. [Short answer] Below what CTC would you say no, even to a great role?
+4. [Checkboxes] Where would you actually work?
+      - Bangalore - office or hybrid is fine
+      - Fully remote, anywhere in India
+      - Bangalore only, and only if the commute is short
+      - I would relocate for the right job
+      - Remote only - I do not want to go to an office
 
-5. [Multiple choice] How soon can you actually start?
-      - Immediately
-      - 1 month
-      - 2-3 months
-      - Flexible
+5. [Multiple choice] Realistically, when could you start?
+      - Right away
+      - In about a month
+      - In 2-3 months
+      - 3 months or more
+      - I am in no hurry - the right job or nothing
 
-6. [Paragraph] TRACK 1 - THE JOB YOU WANT. What role do you want to be doing in two years? Give the job title if you know it, or describe the work if you don't.
+6. [Checkboxes] Picture a workday that flew by and left you feeling good. What were you most likely doing?
+      - Solving a puzzle nobody else could crack
+      - Making something messy become clean and organised
+      - Building or designing something new from scratch
+      - Helping someone and seeing it land
+      - Digging through numbers until the answer appeared
+      - Convincing a room and winning them over
+      - Writing or explaining something really clearly
+      - Fixing a broken thing and making it run properly
+      - Planning something complicated so it all fit together
+      - Learning something completely new
 
-7. [Paragraph] What about that work appeals to you that your current job doesn't give you?
+7. [Checkboxes] Which of these makes you lose track of time?
+      - A spreadsheet that finally balances
+      - A design or layout that finally looks right
+      - A conversation where you changed someone's mind
+      - Reading about something you find interesting
+      - Tidying, sorting or systemising something
+      - Making a process faster
+      - Teaching or explaining something to someone
+      - Hunting down why something went wrong
 
-8. [Paragraph] What do you think is missing from your CV for that role right now? Answer honestly - this decides how far a stretch we reach for.
+8. [Multiple choice] Two problems land on your desk. Which do you pick up first?
+      - The one nobody understands yet
+      - The one that is urgent and clearly defined
+      - The one where people are unhappy and need sorting out
+      - The one where the numbers do not add up
+      - The one that needs something built
+      - The one that needs a decision nobody wants to make
 
-9. [Paragraph] TRACK 2 - THE BEST-PAID JOB YOU COULD GET TODAY. Which job titles could you walk into right now with the experience you already have? List every one you would accept, even the boring ones.
+9. [Checkboxes] When you have done something at work you were quietly proud of, what did it usually look like?
+      - Something I built or set up that is still being used
+      - A mess I cleaned up
+      - A number that went up or down because of me
+      - A person or team I helped get better
+      - A decision I made that turned out right
+      - Something I shipped on time when it looked impossible
+      - Something I made much simpler than it was
 
-10. [Short answer] For that kind of role, what salary would make it clearly worth moving for?
+10. [Multiple choice] Which compliment would mean the most to you?
+      - "Nobody thinks about this as carefully as you do"
+      - "You made this so much simpler"
+      - "I could not have done this without you"
+      - "You were right"
+      - "You built something that lasted"
+      - "You are the only one who actually understands this"
+      - "Everything runs better since you took over"
 
-11. [Paragraph] Is there any well-paid job you would refuse on principle, even for good money? Say so plainly.
+11. [Multiple choice] Which job would you rather have?
+      - Clear goals and a clear process - I know what good looks like
+      - Clear goals, but I decide how
+      - Vague goals and total freedom - I will figure it out
+      - Honestly, it depends on the day
 
-12. [Multiple choice] Right now, which matters more?
-      - The right job, money second
-      - Mostly the right job, but pay must not drop
-      - Even split - show me both
-      - Mostly the money, but not a dead end
-      - The money, clearly
+12. [Multiple choice] What pace suits you?
+      - Steady and predictable, few surprises
+      - Mostly steady with the odd busy stretch
+      - Fast, changing, a bit chaotic - I like the buzz
+      - Intense bursts, then room to breathe
 
-13. [Multiple choice] Do you want to build new things, or improve existing systems?
-      - Build from zero
-      - Mostly build
-      - Mostly improve
-      - Improve/optimise
+13. [Multiple choice] How much of your day would you like to involve other people?
+      - Mostly on my own, deep in the work
+      - Small team, same few people, quiet
+      - Lots of collaboration across teams
+      - Constantly with people - that is the fun part
 
-14. [Multiple choice] Early-stage chaos or established company structure?
-      - Seed/Series A
-      - Series B-C
-      - Late stage
-      - Large enterprise
+14. [Multiple choice] Which sounds better?
+      - Getting really, really good at one thing
+      - A few related things I know well
+      - Something different every few months
+      - No two days the same
 
-15. [Multiple choice] Would you take a harder role at lower pay if it moved you faster?
-      - Yes, clearly
-      - Maybe, depends
-      - No, pay matters now
+15. [Multiple choice] When you have to make a call, what do you reach for?
+      - The data - show me the numbers
+      - My gut - I usually know
+      - Ask the people affected
+      - Find out what worked last time
+      - Think it through carefully alone, then decide
 
-16. [Paragraph] What subject matter would you genuinely enjoy working on daily? Name it in your own words.
+16. [Multiple choice] Which would you rather be?
+      - The person who owns one thing completely
+      - The person who makes a big machine run smoothly
+      - The expert everyone asks
+      - The person who decides what the team does next
+      - The person who quietly makes everyone else better
 
-17. [Multiple choice] What's your real preference on office days?
+17. [Checkboxes] Which of these would genuinely ruin your week? Tick as many as are true.
+      - Being interrupted all day
+      - Having to sell or chase targets
+      - Repetitive work with no thinking in it
+      - Office politics and managing upwards
+      - Being micromanaged
+      - No clear answer to what I am supposed to do
+      - Sitting in meetings all day
+      - Working alone with nobody to talk to
+      - Being responsible for something I cannot control
+      - Constant firefighting and emergencies
+      - Doing the same thing I did five years ago
+      - Late night calls with another country
+
+18. [Checkboxes] Which kind of manager would make you quit?
+      - Checks everything I do
+      - Never available when I need a decision
+      - Changes their mind constantly
+      - Takes credit for my work
+      - Only cares about numbers, not people
+      - Avoids hard conversations
+      - Expects me online at all hours
+
+19. [Paragraph] Think of a job or a stretch at work you did not enjoy. What was actually wrong with it?
+
+20. [Checkboxes] What are you really hoping this next job gives you? Pick up to three.
+      - More money, plainly
+      - Work I find genuinely interesting
+      - A title that reflects what I actually do
+      - Learning something that makes me more valuable
+      - Stability and security
+      - Time and energy left over for my life
+      - Respect - being taken seriously
+      - Doing something that matters to someone
+      - A path to leading a team
+      - Getting out of where I am
+
+21. [Checkboxes] It is two years from now and this move worked out beautifully. What is true?
+      - I am earning significantly more
+      - I am doing work I find genuinely interesting
+      - I am senior to where I am now
+      - I am known as good at something specific
+      - I have a team
+      - I finish at a reasonable hour and I am fine
+      - I changed field completely and it worked
+      - I have options - people want to hire me
+
+22. [Multiple choice] A job offers everything you want but 20% less money. What do you do?
+      - Take it - the work matters more
+      - Take it if the money catches up within a year
+      - Negotiate hard, then probably take it
+      - Probably not - money matters right now
+      - No - I am not going backwards on pay
+
+23. [Multiple choice] Two job lists. One has jobs you would love but would have to stretch for. The other has jobs you could get comfortably that pay well. Which do you want to see?
+      - Mostly the stretch ones - aim high
+      - More stretch than safe, but show me both
+      - An even mix, I will judge each one
+      - More safe than stretch, but show me both
+      - Mostly the well-paid ones - I want a solid move
+
+24. [Checkboxes] TRACK 1, THE JOB YOU WANT. Forget titles and whether you are qualified. If you could spend your working day doing anything, which of these is closest?
+      - Building or creating things
+      - Analysing and finding out what is true
+      - Organising and making things run properly
+      - Helping and developing people
+      - Designing how something looks or feels
+      - Persuading, negotiating, winning business
+      - Writing, explaining, teaching
+      - Leading, deciding, being accountable
+      - Working with money, risk or rules
+      - Working closely with technology
+
+25. [Paragraph] Anything you want to add about that? Even half an idea is useful - 'something in design but not graphic design', 'I keep thinking about HR', that sort of thing.
+
+26. [Checkboxes] What do you think is stopping you from getting that kind of job today?
+      - I do not have the right experience yet
+      - I do not have the right qualification or certificate
+      - Nobody would take me seriously for it
+      - I do not actually know what the job is called
+      - It would mean a pay cut
+      - Nothing really - I just have not looked properly
+      - I am not sure I am good enough
+
+27. [Multiple choice] TRACK 2, THE WELL-PAID JOB YOU COULD GET NOW. Someone offers you more money to do roughly what you already do. Your honest reaction?
+      - Yes please, that is exactly what I want
+      - Happily, if the company and people are better
+      - Only if it is a lot more money
+      - Only as a stepping stone to something else
+      - No - I want to change what I do, not where I do it
+
+28. [Paragraph] Are there any job titles you already know you could do? List any that come to mind, even the dull ones. Leave it blank if you are not sure - we will work it out from your CV.
+
+29. [Checkboxes] Is there any well-paid job you would turn down on principle?
+      - Anything with sales targets
+      - Anything requiring night shifts or US hours
+      - Anything with heavy travel
+      - Anything back in a field I deliberately left
+      - Anything at a company I think behaves badly
+      - Nothing really - good money is good money
+
+30. [Multiple choice] Office days - what do you actually want?
       - Fully remote
-      - 1-2 days office
-      - 3-4 days office
-      - Don't care
+      - 1-2 days in office
+      - 3-4 days in office
+      - Every day in office is fine
+      - I genuinely do not mind
 
-18. [Checkboxes] What would make you quit within 6 months?
-      - Rigid hierarchy
-      - No autonomy
-      - Constant firefighting
-      - Formal dress code
-      - Heavy travel
-      - Long commute
-      - Night shifts / US hours
-      - None of these
+31. [Paragraph] Anything that is an absolute no? A company, an industry, a kind of team, a commute, anything at all.
 
-19. [Paragraph] Anything else that is an absolute no? Night shifts, heavy travel, a specific company, a specific kind of team - name it.
+32. [Paragraph] What do people at work always come to YOU for? However small, however odd.
 
-20. [Paragraph] Name 2-3 things you have actually shipped, run or fixed. Real ones, with numbers if you have them - how many users, how much money, how much faster.
+33. [Paragraph] Name one or two things you have actually done at work that you would happily tell someone about. Numbers if you have them, but a plain sentence is fine.
 
-21. [Paragraph] What can you say that 95% of other applicants cannot? It can be a skill, a domain, a language, a market you know, anything.
-
-22. [Paragraph] Why are you switching now, in one honest sentence?
+34. [Paragraph] Last one. Why are you looking now?
