@@ -23,6 +23,10 @@ model2vec>=0.9
 
 # --- optional, and degraded gracefully when missing -------------------
 openpyxl>=3.1                # /export.xlsx; falls back to CSV without it
+pypdf>=4.0                   # CV upload: PDF text. Pure Python, no
+                             # compiled deps. .docx and .rtf need
+                             # nothing — core/resume.py reads the
+                             # zip and the XML itself.
 python-jobspy>=1.1.80        # Tier 2 (LinkedIn/Indeed). Off in sources.yml
 pandas>=2.0                  # required by python-jobspy
 

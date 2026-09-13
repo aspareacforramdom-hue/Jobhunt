@@ -23,7 +23,7 @@ from fastapi import Form, Request, UploadFile
 from fastapi.responses import PlainTextResponse, RedirectResponse
 
 from core import calibrate as calib
-from core import db, intake
+from core import db, intake, resume
 from web.render import page
 
 SCHEMA_PATH = "config/profile_schema.yml"
@@ -122,22 +122,27 @@ def register(app, db_path=None):
 
         This is the whole point of the feature: until a résumé is here,
         the scorer judges jobs against a three-sentence summary and the
-        tailor has nothing real to quote. Plain text only — parsing PDF
-        and DOCX would mean a new dependency and a new class of failure,
-        and "save as .txt" is one step for three people.
+        tailor has nothing real to quote.
+
+        It took plain text only, on the reasoning that parsing PDF meant
+        a new dependency and "save as .txt" is one step. But nobody's CV
+        is a .txt file, and a step between a person and the feature is a
+        step at which they stop. core/resume.py now reads PDF, .docx,
+        .rtf and text, identified by magic bytes rather than by the
+        extension — an extension is a claim, the first four bytes are a
+        fact.
         """
         if cv_file is None:
             return RedirectResponse("/intake?msg=No+file+chosen",
                                     status_code=303)
 
-        raw = (await cv_file.read())[:200_000]
-        text = raw.decode("utf-8", errors="replace").strip()
-        if len(text) < 200:
+        raw = await cv_file.read(resume.MAX_BYTES + 1)
+        try:
+            text, note = resume.extract(raw, cv_file.filename or "")
+        except ValueError as e:
+            # Written for the person holding the file, not for a log.
             return RedirectResponse(
-                "/intake?msg=" + quote("That file had almost no text in it. "
-                                       "Export your CV as plain text (.txt) "
-                                       "and try again.", safe=""),
-                status_code=303)
+                "/intake?msg=" + quote(str(e), safe=""), status_code=303)
 
         conn = db.connect(request.state.db_path)
         try:
@@ -148,11 +153,13 @@ def register(app, db_path=None):
         finally:
             conn.close()
 
-        return RedirectResponse(
-            "/intake?msg=" + quote(f"CV saved — {len(text):,} characters. "
-                                   f"Scoring and drafts now use it.",
-                                   safe=""),
-            status_code=303)
+        kind = resume.sniff(raw)
+        msg = (f"CV saved — {len(text):,} characters from your "
+               f"{kind.upper()}. Scoring and drafts now use it.")
+        if note:
+            msg += f" Note: {note}"
+        return RedirectResponse("/intake?msg=" + quote(msg, safe=""),
+                                status_code=303)
 
     @app.post("/intake")
     async def intake_upload(request: Request, csv_file: UploadFile = None,

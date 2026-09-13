@@ -76,17 +76,26 @@
       <p class="note prose" style="margin-bottom: 1rem">
         Without it, scoring judges roles against the few sentences your
         intake produced, and the prepare screen cannot rewrite your CV
-        bullets — it has never seen them. Plain text only: export or
-        “save as” <code>.txt</code> from Word or Google Docs.</p>
+        bullets — it has never seen them. Upload the CV you already
+        have: PDF, Word <code>.docx</code>, <code>.rtf</code> or
+        <code>.txt</code>.</p>
     {% endif %}
 
     <form method="post" action="/intake/resume" enctype="multipart/form-data"
           class="inline">
-      <input type="file" name="cv_file" accept=".txt,text/plain" required
+      {# Sniffed by magic bytes on the server, so this list is a
+         convenience for the file picker and never the thing trusted. #}
+      <input type="file" name="cv_file" required
+             accept=".pdf,.docx,.rtf,.txt,application/pdf,text/plain,
+                     application/vnd.openxmlformats-officedocument.wordprocessingml.document"
              style="font-family: var(--font-ui); font-size: .75rem">
       <button class="btn btn--solid">
         {{ "Replace CV" if resume_chars else "Upload CV" }}</button>
     </form>
+    <p class="note mt-2">
+      A PDF has to be one you can select text in — a scan is a picture of
+      a CV and has no text to read. Old <code>.doc</code> files need
+      saving as <code>.docx</code> first.</p>
     <p class="note mt-2">
       Stored in your own database on this machine and never published —
       the shareable pages carry job listings and reasoning, never

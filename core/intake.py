@@ -12,7 +12,7 @@ import os
 
 import yaml
 
-from core import dimensions
+from core import dimensions, resume
 from core.llm import call_llm
 
 PROFILE_PATH = "data/profile.json"
@@ -238,8 +238,13 @@ def load_profile():
 def run_intake(cv_path):
     with open("config/profile_schema.yml", encoding="utf-8") as f:
         schema = yaml.safe_load(f)
-    with open(cv_path, encoding="utf-8", errors="replace") as f:
-        cv_text = f.read()
+    # The same reader the portal uses, so `run.py intake --cv cv.pdf`
+    # works and the two paths cannot drift into accepting different
+    # things. Raises ValueError with a message meant for a person.
+    with open(cv_path, "rb") as f:
+        cv_text, note = resume.extract(f.read(), cv_path)
+    if note:
+        print(f"  note: {note}")
 
     print("→ Reading your CV...")
     parsed = parse_resume(cv_text, schema)
