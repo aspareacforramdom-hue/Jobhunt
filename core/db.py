@@ -274,6 +274,15 @@ def upsert_job(conn, job):
     url = normalize_url(job.get("url"))
     if not url:
         return None
+    # The follow-up SELECT looks like an obvious N+1 — a scan upserts the
+    # whole scrape and this runs 900-odd times — so it was rewritten to
+    # use RETURNING, which removes every one of those statements.
+    #
+    # Measured, that was 40% SLOWER (23.2ms vs 16.6ms for 900 rows, same
+    # conflict clause, best of three). RETURNING on an upsert makes
+    # SQLite materialise the row; a lookup on a UNIQUE index is close to
+    # free. Fewer statements is not the same thing as faster, and the
+    # cheap-looking query was the cheap one. Left as it is, deliberately.
     conn.execute(
         "INSERT INTO jobs (url, title, company, location, description, "
         "source, found_at) VALUES (?,?,?,?,?,?,?) "
@@ -302,8 +311,15 @@ def known_urls(conn):
 # ------------------------------------------------------------
 # user_jobs  (per user — never shared)
 # ------------------------------------------------------------
-def upsert_user_job(conn, user_id, job_id, scored):
-    """Write one user's opinion of a job. Never touches another user's."""
+def upsert_user_job(conn, user_id, job_id, scored, commit=True):
+    """Write one user's opinion of a job. Never touches another user's.
+
+    `commit=False` lets a caller writing a whole board do it in one
+    transaction. Each commit is an fsync, and a scan was doing one per
+    scored listing — 60 syncs to write 60 rows that are useless
+    individually anyway, since a half-written board is not a state
+    anybody wants to see.
+    """
     conn.execute(
         "INSERT INTO user_jobs (user_id, job_id, score, verdict, angle, "
         "risk, stretch, score_breakdown_json, evidence, track, status, "
@@ -322,7 +338,8 @@ def upsert_user_job(conn, user_id, job_id, scored):
          _j(scored.get("score_breakdown", {})),
          scored.get("evidence") or None, scored.get("track") or None,
          now()))
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 # `j.*` used to be here, which dragged the description column into every

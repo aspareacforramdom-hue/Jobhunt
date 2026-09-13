@@ -410,3 +410,63 @@ def test_no_configured_slug_is_known_to_be_dead():
 
     assert "phonepe" not in (ats.get("greenhouse") or [])
     assert "phonepe" not in (ats.get("lever") or [])
+
+
+# ============================================================
+# Writing a board
+# ============================================================
+def test_a_board_is_written_in_one_transaction(tmp_path):
+    """
+    Each commit is an fsync. Writing 200 rows one commit at a time took
+    443ms; one transaction took 7ms — 63x, for a change that also makes
+    more sense, because half a board is not a state anybody wants to
+    see.
+    """
+    conn = db.connect(str(tmp_path / "b.db"))
+    uid, _ = session.create_account(conn, "u", "pw")
+    # sqlite3.Connection takes no attribute assignment, so count the
+    # statements it actually runs instead of wrapping the method.
+    commits = []
+    conn.set_trace_callback(
+        lambda sql: commits.append(sql) if sql.strip().upper() == "COMMIT"
+        else None)
+
+    for i in range(50):
+        jid = db.upsert_job(conn, {"url": f"u{i}", "title": "T",
+                                   "company": "C", "found_at": db.now()})
+        db.upsert_user_job(conn, uid, jid, {"score": 7.0}, commit=False)
+    conn.commit()
+
+    assert len(commits) == 1, "50 rows must not mean 50 fsyncs"
+    assert db.count_user_jobs(conn, uid) == 50
+    conn.close()
+
+
+def test_writing_one_row_still_commits_by_default(tmp_path):
+    """Every other caller — the board buttons, the CLI — writes one row
+    and expects it to be durable when the call returns."""
+    conn = db.connect(str(tmp_path / "b.db"))
+    uid, _ = session.create_account(conn, "u", "pw")
+    jid = db.upsert_job(conn, {"url": "u1", "title": "T", "company": "C",
+                               "found_at": db.now()})
+
+    db.upsert_user_job(conn, uid, jid, {"score": 7.0})
+
+    assert db.count_user_jobs(conn, uid) == 1
+    conn.close()
+
+
+def test_the_linkcheck_queue_does_not_scan_the_table(tmp_path):
+    """It runs at the end of every scan, and user_jobs grows by the size
+    of every board on every scan."""
+    conn = db.connect(str(tmp_path / "b.db"))
+    plan = [r["detail"] for r in conn.execute(
+        "EXPLAIN QUERY PLAN "
+        "SELECT DISTINCT j.url FROM jobs j JOIN user_jobs uj "
+        "ON uj.job_id = j.id WHERE j.closed_at IS NULL "
+        "AND uj.status = 'new' AND j.url IS NOT NULL "
+        "ORDER BY (j.missing_since IS NULL), j.found_at ASC LIMIT 200")]
+
+    assert any("idx_user_jobs_new" in d for d in plan), plan
+    assert not any(d.startswith("SCAN uj") for d in plan), plan
+    conn.close()

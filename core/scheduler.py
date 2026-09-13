@@ -522,11 +522,17 @@ class Scanner:
                     f"scored 0 of {len(candidates)} candidates — every LLM "
                     f"call failed. Check ANTHROPIC_API_KEY.")
 
+            # One transaction for the whole board. Each commit is an
+            # fsync, and this was doing one per scored listing — 60
+            # syncs to write 60 rows that are useless individually
+            # anyway, because half a board is not a state anybody wants
+            # to see.
             for j in scored:
                 jid = job_ids.get(j["url"])
                 if jid:
-                    db.upsert_user_job(conn, user_id, jid, j)
+                    db.upsert_user_job(conn, user_id, jid, j, commit=False)
                 reviews.enrich_from_listing(conn, j)
+            conn.commit()
 
             db.finish_run(conn, run_id, "ok", len(scored))
 

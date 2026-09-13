@@ -259,4 +259,15 @@ MIGRATIONS = [
     """
     ALTER TABLE user_jobs ADD COLUMN track TEXT;
     """,
+    # 12 - the link checker's queue was a full table scan.
+    #
+    # It asks for open listings on somebody's board, oldest first, and
+    # the planner had no index for "this user's rows with status new",
+    # so it read every row of user_jobs to find them. At 76 rows that is
+    # 0.7ms and invisible; the table grows by the size of every board on
+    # every scan, and this runs at the end of each one.
+    """
+    CREATE INDEX IF NOT EXISTS idx_user_jobs_new
+        ON user_jobs (status, job_id) WHERE status = 'new';
+    """,
 ]
