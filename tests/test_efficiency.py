@@ -209,17 +209,17 @@ def test_every_configured_ats_board_type_is_actually_fetched():
     configured = set(yaml.safe_load(
         open("config/sources.yml", encoding="utf-8"))["ats_targets"])
 
-    for board in configured:
-        assert hasattr(discover, f"from_{board}"), (
-            f"sources.yml offers an '{board}:' list but there is no "
-            f"discover.from_{board} — slugs added there do nothing")
+    for kind in configured:
+        assert hasattr(discover, f"from_{kind}"), (
+            f"sources.yml offers an '{kind}:' list but there is no "
+            f"discover.from_{kind} — slugs added there do nothing")
 
 
 def test_all_three_board_types_reach_the_fan_out(monkeypatch):
     seen = []
-    for board in ("greenhouse", "lever", "ashby"):
-        monkeypatch.setattr(discover, f"from_{board}",
-                            lambda slug, b=board: seen.append(b) or [])
+    for kind in ("greenhouse", "lever", "ashby"):
+        monkeypatch.setattr(discover, f"from_{kind}",
+                            lambda slug, b=kind: seen.append(b) or [])
 
     discover._fetch_ats({"greenhouse": ["a"], "lever": ["b"], "ashby": ["c"]})
 
@@ -290,3 +290,123 @@ def test_prefilter_builds_the_token_set_once_not_per_listing(monkeypatch):
 
     assert calls["n"] == 1, (
         f"rebuilt the target token set {calls['n']} times for 200 listings")
+
+
+# ============================================================
+# Duplicate postings
+# ============================================================
+def test_the_same_role_in_two_cities_is_not_collapsed():
+    """
+    Measured on the live corpus: 31 groups shared a title and company,
+    and most were one role genuinely open in two places. Collapsing on
+    title+company alone would have hidden the Bengaluru opening from
+    someone who can only work in Bengaluru.
+    """
+    rows, dropped = discover.collapse_duplicates([
+        {"title": "Group Product Manager", "company": "mindtickle",
+         "location": "Pune, Maharashtra"},
+        {"title": "Group Product Manager", "company": "mindtickle",
+         "location": "Bengaluru, Karnataka"}])
+
+    assert dropped == 0
+    assert len(rows) == 2
+
+
+def test_the_same_req_posted_twice_is_collapsed():
+    """Paytm had three reqs on one Lever board twice over — same title,
+    same city, different id. Both copies were scored, at full price."""
+    rows, dropped = discover.collapse_duplicates([
+        {"title": "Product Management - Senior PM", "company": "paytm",
+         "location": "Noida, Uttar Pradesh", "url": "a"},
+        {"title": "Product Management  Senior PM", "company": "Paytm",
+         "location": "noida, uttar pradesh", "url": "b"}])
+
+    assert dropped == 1
+    assert len(rows) == 1
+
+
+def test_the_survivor_is_the_copy_the_scorer_can_read():
+    """The scorer reads the description. When the same job arrives from
+    two sources, the fuller copy is the better raw material."""
+    rows, _ = discover.collapse_duplicates([
+        {"title": "Data Engineer", "company": "C", "location": "L",
+         "source": "lever", "description": ""},
+        {"title": "Data Engineer", "company": "C", "location": "L",
+         "source": "indeed", "description": "three paragraphs of detail"}])
+
+    assert [r["source"] for r in rows] == ["indeed"]
+
+
+def test_a_listing_with_no_title_is_never_collapsed():
+    """An empty key would swallow every other untitled row with it."""
+    rows, dropped = discover.collapse_duplicates(
+        [{"title": None, "company": None, "url": f"u{i}"} for i in range(4)])
+
+    assert dropped == 0
+    assert len(rows) == 4
+
+
+def test_order_is_preserved_so_the_tiers_still_read_in_sequence():
+    rows, _ = discover.collapse_duplicates([
+        {"title": f"T{i}", "company": "C", "location": "L"} for i in range(5)])
+
+    assert [r["title"] for r in rows] == ["T0", "T1", "T2", "T3", "T4"]
+
+
+# ============================================================
+# A dead slug must not look like a quiet one
+# ============================================================
+def test_a_dead_board_is_swallowed_during_a_scan(monkeypatch, capsys):
+    """
+    The swallow is deliberate and must stay: one company deleting their
+    board cannot be allowed to take the whole tier down mid-scan.
+    """
+    from core import sources_free
+
+    def dead(req, timeout=None):
+        raise OSError("HTTP Error 404: Not Found")
+
+    monkeypatch.setattr(sources_free, "STRICT", False)
+    monkeypatch.setattr(discover.urllib.request, "urlopen", dead)
+
+    assert discover.from_greenhouse("gone") == []
+    assert "404" in capsys.readouterr().out
+
+
+def test_but_the_doctor_can_see_it(monkeypatch):
+    """
+    Which left the config unverifiable: a slug that has 404'd for weeks
+    and a company with nothing open both came back as zero listings.
+    `greenhouse: phonepe` survived that way for weeks. STRICT is how
+    `run.py doctor` tells the two apart.
+    """
+    from core import sources_free
+
+    def dead(req, timeout=None):
+        raise OSError("HTTP Error 404: Not Found")
+
+    monkeypatch.setattr(sources_free, "STRICT", True)
+    monkeypatch.setattr(discover.urllib.request, "urlopen", dead)
+
+    with pytest.raises(OSError, match="404"):
+        discover.from_greenhouse("gone")
+
+
+def test_strict_is_off_unless_a_caller_asks():
+    """Nothing on the scanning path may turn this on."""
+    from core import sources_free
+
+    assert sources_free.STRICT is False
+
+
+def test_no_configured_slug_is_known_to_be_dead():
+    """PhonePe is on no public ATS - greenhouse, lever and ashby all 404
+    and smartrecruiters answers 200 with totalFound 0. It sat under
+    `greenhouse:` 404ing on every scan. Keep it out."""
+    import yaml
+
+    ats = yaml.safe_load(
+        open("config/sources.yml", encoding="utf-8"))["ats_targets"]
+
+    assert "phonepe" not in (ats.get("greenhouse") or [])
+    assert "phonepe" not in (ats.get("lever") or [])

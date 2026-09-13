@@ -23,7 +23,7 @@ Every test below pins one of those five back down.
 import pytest
 import yaml
 
-from core import db, discover, scheduler
+from core import db, discover, scheduler, sources_apify
 
 CFG = yaml.safe_load(open("config/sources.yml", encoding="utf-8"))
 
@@ -80,7 +80,7 @@ def test_the_search_buys_titles_not_descriptions(apify):
     Descriptions cost triple and the shortlister only reads titles.
     They are bought later, for survivors.
     """
-    payload = discover._naukri_payload(apify, "Product Manager", [], {})
+    payload = sources_apify._naukri_payload(apify, "Product Manager", [], {})
     assert payload["fetchDetails"] is False
 
 
@@ -93,7 +93,7 @@ def test_a_daily_scan_does_not_re_buy_the_same_week_of_jobs(apify):
 
 
 def test_consultant_reposts_are_excluded_at_the_source(apify):
-    payload = discover._naukri_payload(apify, "Product Manager", [], {})
+    payload = sources_apify._naukri_payload(apify, "Product Manager", [], {})
     assert payload["postedBy"] == ["1"]
 
 
@@ -102,7 +102,7 @@ def test_profile_filters_are_pushed_to_naukri_not_applied_after(apify):
     The actor bills per result handed back, so filtering on their side
     is the difference between paying for 20 jobs and paying for 900.
     """
-    payload = discover._naukri_payload(
+    payload = sources_apify._naukri_payload(
         apify, "Product Manager", ["Bengaluru, India"],
         {"department": [10], "role_category": [1028],
          "work_mode": ["remote"]})
@@ -123,7 +123,7 @@ def test_experience_and_salary_are_never_filtered_on(apify):
     every "not disclosed" listing, which on Naukri is most of the good
     ones. Cheaper is not the only axis.
     """
-    payload = discover._naukri_payload(
+    payload = sources_apify._naukri_payload(
         apify, "Product Manager", [],
         {"experience": ["5"], "salary_range": ["25to50"]})
 
@@ -178,9 +178,9 @@ def test_a_keywords_first_search_reaches_back_and_the_rest_do_not(apify):
     that, asking for anything but "since last time" means re-buying
     listings we already own, because dedup happens after billing.
     """
-    first = discover._naukri_payload(apify, "Product Manager", [], {},
+    first = sources_apify._naukri_payload(apify, "Product Manager", [], {},
                                      backfilled=[])
-    later = discover._naukri_payload(apify, "Product Manager", [], {},
+    later = sources_apify._naukri_payload(apify, "Product Manager", [], {},
                                      backfilled=["Product Manager"])
 
     assert int(first["freshness"]) > int(later["freshness"])
@@ -305,7 +305,7 @@ def test_one_run_carries_every_keyword():
     least 150 results whether you needed 150 or 20. Eighteen narrow
     keyword runs would pay eighteen floors for the same jobs.
     """
-    payload = discover._linkedin_payload(
+    payload = sources_apify._linkedin_payload(
         LI, ["Product Manager", "Brand Manager", "Data Engineer"],
         ["Bengaluru"], {}, seeding=False)
 
@@ -317,8 +317,8 @@ def test_one_run_carries_every_keyword():
 
 
 def test_linkedin_seeds_deep_once_then_asks_only_for_new():
-    seed = discover._linkedin_payload(LI, ["pm"], [], {}, seeding=True)
-    daily = discover._linkedin_payload(LI, ["pm"], [], {}, seeding=False)
+    seed = sources_apify._linkedin_payload(LI, ["pm"], [], {}, seeding=True)
+    daily = sources_apify._linkedin_payload(LI, ["pm"], [], {}, seeding=False)
 
     assert seed["publishedAt"] == "r2592000"      # 30 days
     assert daily["publishedAt"] == "r86400"       # 24 hours
@@ -337,7 +337,7 @@ def test_asking_below_the_billing_floor_saves_nothing():
 
 def test_experience_and_salary_are_refused_here_too():
     """Same refusal as Naukri: stretch roles are the product."""
-    payload = discover._linkedin_payload(
+    payload = sources_apify._linkedin_payload(
         LI, ["pm"], [], {"experienceLevel": ["entry-level"],
                          "salaryBase": "100000"}, seeding=False)
 

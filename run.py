@@ -432,6 +432,89 @@ def cmd_review(args):
         conn.close()
 
 
+def cmd_doctor(args):
+    """
+    Probe every configured source and say which ones are actually alive.
+
+    This exists because a dead board and a quiet one look identical.
+    `greenhouse: phonepe` sat in sources.yml returning HTTP 404 on every
+    scan for weeks; the fetcher swallows that so one bad slug cannot take
+    the whole tier down, and the scan reported "739 listings" either way.
+    The distinction the config needs is:
+
+        404 or error   the slug is wrong, nothing will ever come back
+        200 with zero  the board is real, they just are not hiring today
+
+    Only the first is a bug, and only the first is worth shouting about.
+    """
+    import yaml
+    from concurrent.futures import ThreadPoolExecutor
+
+    from core import discover, semantic, sources_free
+
+    # Ask the fetchers to raise instead of swallowing, so a wrong slug
+    # can be told apart from a board with nothing open. Only here.
+    sources_free.STRICT = True
+
+    src = yaml.safe_load(open("config/sources.yml", encoding="utf-8"))
+    ats = src.get("ats_targets") or {}
+
+    print("Career Loop source check")
+    print("=" * 62)
+
+    orphans = [k for k in ats if not hasattr(discover, f"from_{k}")]
+    if orphans:
+        print(f"\n  BROKEN  sources.yml offers {orphans} but no fetcher "
+              f"exists for them.\n          Every slug listed there is "
+              f"silently doing nothing.")
+
+    pairs = [(k, s) for k, v in ats.items() if k not in orphans
+             for s in (v or [])]
+
+    def probe(pair):
+        kind, slug = pair
+        try:
+            return (kind, slug,
+                    len(getattr(discover, f"from_{kind}")(slug)), None)
+        except Exception as e:                          # noqa: BLE001
+            return kind, slug, -1, str(e)[:48]
+
+    print(f"\nATS boards ({len(pairs)} slugs configured)")
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = sorted(pool.map(probe, pairs))
+
+    broken = [r for r in results if r[2] < 0]
+    quiet = [r for r in results if r[2] == 0]
+    for kind, slug, n, err in results:
+        mark = "BROKEN " if n < 0 else ("quiet  " if n == 0 else "ok     ")
+        detail = err if n < 0 else (f"{n} listings" if n else "no openings")
+        print(f"  {mark} {kind:16} {slug:22} {detail}")
+    print(f"\n  {len(results) - len(broken) - len(quiet)} live, "
+          f"{len(quiet)} quiet, {len(broken)} broken")
+    if broken:
+        print("  Fix or delete the broken slugs. They cost a request on "
+              "every scan\n  and can never return a listing.")
+
+    print("\nKeys and models")
+    for name, why in (("ANTHROPIC_API_KEY", "scoring, tailoring, intake"),
+                      ("APIFY_TOKEN", "Naukri and LinkedIn"),
+                      ("FIRECRAWL_API_KEY", "open-web career pages")):
+        print(f"  {'set    ' if os.environ.get(name) else 'MISSING'} "
+              f"{name:20} {why}")
+
+    ready = semantic.available()
+    print(f"  {'ready  ' if ready else 'MISSING'} {'semantic model':20} "
+          f"{'free shortlisting' if ready else 'run: py run.py warm-up'}")
+    try:
+        import jobspy                                   # noqa: F401
+        print(f"  ready   {'jobspy':20} free Indeed and LinkedIn")
+    except ImportError:
+        print(f"  MISSING {'jobspy':20} pip install python-jobspy")
+
+    if broken or orphans:
+        sys.exit(1)
+
+
 COMMANDS = {
     "intake": cmd_intake,
     "calibrate": cmd_calibrate,
@@ -444,6 +527,7 @@ COMMANDS = {
     "set-telegram": cmd_set_telegram,
     "publish": cmd_publish,
     "migrate": cmd_migrate,
+    "doctor": cmd_doctor,
     "serve": cmd_serve,
 }
 

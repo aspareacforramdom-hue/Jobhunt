@@ -55,7 +55,12 @@ jobspy:
 # jobs.ashbyhq.com/SLUG. A wrong slug logs one line and is skipped.
 ats_targets:
   greenhouse:
-    - phonepe          # was miscategorised under lever
+    # PhonePe deliberately absent. It is on no public ATS: greenhouse
+    # 404s, lever 404s, ashby 404s, and smartrecruiters answers 200
+    # with totalFound 0. It sat here 404ing on every scan and the
+    # fetcher swallowed it. Reach them through firecrawl or the
+    # company discovery layer, not here. `py run.py doctor` catches
+    # this class of rot now.
     - postman
     - inmobi
     - glance

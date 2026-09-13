@@ -278,7 +278,7 @@ def _report_billing(billing):
         print(f"   prompt cache: {read:,} of {total:,} input tokens read "
               f"from cache (~90% cheaper)")
     elif write:
-        print(f"   prompt cache: written but never read — only one batch ran")
+        print("   prompt cache: written but never read — only one batch ran")
     else:
         print("   prompt cache: NOT engaging. The shared prefix is likely "
               "below this model's minimum cacheable length; scoring still "

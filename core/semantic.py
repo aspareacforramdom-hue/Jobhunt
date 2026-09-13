@@ -194,7 +194,6 @@ def rank(jobs, profile):
         return None
 
     try:
-        import numpy as np
         anchor_vecs = _unit(model.encode(targets))
         job_vecs = _unit(model.encode([job_text(j) for j in jobs]))
         # (jobs x dims) @ (dims x anchors) -> best anchor per job
@@ -203,7 +202,7 @@ def rank(jobs, profile):
         print(f"  [semantic] ranking failed, falling back: {e}")
         return None
 
-    for job, score in zip(jobs, best):
+    for job, score in zip(jobs, best, strict=True):
         job["_semantic_score"] = float(score)
 
     jobs.sort(key=lambda j: -j["_semantic_score"])

@@ -5,7 +5,6 @@ If it doesn't fit on a phone screen, it won't get read.
 """
 
 import html
-import json
 import os
 import urllib.parse
 import urllib.request
