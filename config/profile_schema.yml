@@ -1,12 +1,42 @@
 # ============================================================
 # PROFILE SCHEMA
-# Every dimension the intake loop must resolve before searching.
+# Every dimension the intake must resolve before searching.
 #
 # 'compiles_to' is the discipline: an answer that doesn't become
 # a filter, a weight, or an angle is noise and gets dropped.
+#
+# TWO TRACKS. The tool was built to hunt one thing — the role above
+# your current level, the stretch — and it scores a well-paid sideways
+# move as a NEAR MISS. For somebody with a mortgage and three months'
+# notice that is the wrong instinct half the time. So the profile now
+# carries two targets:
+#
+#   ideal     the job she wants to grow into, worth a stretch
+#   leverage  the best-paid job her CV already qualifies her for
+#
+# Same listing, two verdicts, one LLM call — the listing text is what
+# costs money and it is sent once either way. 'track' below says which
+# target an answer belongs to; questions with no track feed both.
 # ============================================================
 
 dimensions:
+
+  # ---------- WHO SHE IS TODAY (facts, not preferences) ----------
+  # The scorer needs a floor to measure a stretch FROM. Without this it
+  # is guessing her level from job titles on a CV, and Indian titles
+  # inflate badly - a "Senior Manager" at one firm is an IC at another.
+  - id: current_role
+    ask: "What is your current job title, and how many years have you
+          been working in total?"
+    compiles_to: filter
+    type: text
+
+  - id: current_ctc
+    ask: "What is your current CTC? This is only used to judge whether a
+          job is actually a raise - it is never sent anywhere."
+    compiles_to: filter
+    type: number
+    unit: "LPA"
 
   # ---------- HARD FILTERS (binary reject) ----------
   - id: location
@@ -26,6 +56,66 @@ dimensions:
     compiles_to: filter
     type: single
     options: ["Immediately", "1 month", "2-3 months", "Flexible"]
+
+  # ---------- TRACK A: THE IDEAL JOB ----------
+  - id: ideal_role
+    ask: "TRACK 1 - THE JOB YOU WANT. What role do you want to be doing
+          in two years? Give the job title if you know it, or describe
+          the work if you don't."
+    compiles_to: filter
+    track: ideal
+    type: text
+
+  - id: ideal_why
+    ask: "What about that work appeals to you that your current job
+          doesn't give you?"
+    compiles_to: weight
+    track: ideal
+    type: text
+
+  - id: ideal_gap
+    ask: "What do you think is missing from your CV for that role right
+          now? Answer honestly - this decides how far a stretch we
+          reach for."
+    compiles_to: weight
+    track: ideal
+    type: text
+
+  # ---------- TRACK B: THE WELL-PAID JOB SHE CAN GET NOW ----------
+  - id: leverage_roles
+    ask: "TRACK 2 - THE BEST-PAID JOB YOU COULD GET TODAY. Which job
+          titles could you walk into right now with the experience you
+          already have? List every one you would accept, even the boring
+          ones."
+    compiles_to: filter
+    track: leverage
+    type: text
+
+  - id: leverage_floor
+    ask: "For that kind of role, what salary would make it clearly worth
+          moving for?"
+    compiles_to: filter
+    track: leverage
+    type: number
+    unit: "LPA"
+
+  - id: leverage_limits
+    ask: "Is there any well-paid job you would refuse on principle, even
+          for good money? Say so plainly."
+    compiles_to: filter
+    track: leverage
+    type: text
+
+  # ---------- WHICH TRACK MATTERS MORE ----------
+  - id: track_balance
+    ask: "Right now, which matters more?"
+    compiles_to: weight
+    type: single
+    options: ["The right job, money second",
+              "Mostly the right job, but pay must not drop",
+              "Even split - show me both",
+              "Mostly the money, but not a dead end",
+              "The money, clearly"]
 
   # ---------- SCORE WEIGHTS ----------
   - id: build_vs_operate
@@ -57,7 +147,7 @@ dimensions:
     compiles_to: weight
     type: text
 
-  # ---------- COMFORT FACTORS (your sketch — kept, made scoreable) ----------
+  # ---------- COMFORT FACTORS ----------
   - id: work_mode
     ask: "What's your real preference on office days?"
     compiles_to: weight
@@ -69,16 +159,30 @@ dimensions:
     compiles_to: filter
     type: multi
     options: ["Rigid hierarchy", "No autonomy", "Constant firefighting",
-              "Formal dress code", "Heavy travel", "None of these"]
+              "Formal dress code", "Heavy travel", "Long commute",
+              "Night shifts / US hours", "None of these"]
+
+  # A woman job-hunting in India gets asked about marriage plans and
+  # gets routed into "flexible" roles that pay less. Naming what she
+  # will not accept turns that into a filter instead of a surprise in
+  # the third round.
+  - id: hard_no
+    ask: "Anything else that is an absolute no? Night shifts, heavy
+          travel, a specific company, a specific kind of team - name it."
+    compiles_to: filter
+    type: text
 
   # ---------- APPLICATION ANGLES (narrative fuel) ----------
   - id: proof_points
-    ask: "Name 2-3 things you've actually shipped or run. Real ones."
+    ask: "Name 2-3 things you have actually shipped, run or fixed. Real
+          ones, with numbers if you have them - how many users, how much
+          money, how much faster."
     compiles_to: angle
     type: text
 
   - id: unfair_advantage
-    ask: "What can you say that 95% of applicants for this role cannot?"
+    ask: "What can you say that 95% of other applicants cannot? It can be
+          a skill, a domain, a language, a market you know, anything."
     compiles_to: angle
     type: text
 
@@ -88,7 +192,7 @@ dimensions:
     type: text
 
 # ------------------------------------------------------------
-# LOOP EXIT RULES — your sketch's loop had no stopping condition
+# LOOP EXIT RULES (the CLI intake only; the form asks everything)
 # ------------------------------------------------------------
 loop:
   max_questions: 7

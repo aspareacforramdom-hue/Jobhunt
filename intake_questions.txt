@@ -1,0 +1,78 @@
+CAREER LOOP INTAKE
+Do not edit the question wording — the importer matches on it.
+
+1. [Paragraph] What is your current job title, and how many years have you been working in total?
+
+2. [Short answer] What is your current CTC? This is only used to judge whether a job is actually a raise - it is never sent anywhere.
+
+3. [Paragraph] Which cities would you actually work in? Be honest about relocation, and say 'remote only' if that's the truth.
+
+4. [Short answer] Below what CTC would you say no, even to a great role?
+
+5. [Multiple choice] How soon can you actually start?
+      - Immediately
+      - 1 month
+      - 2-3 months
+      - Flexible
+
+6. [Paragraph] TRACK 1 - THE JOB YOU WANT. What role do you want to be doing in two years? Give the job title if you know it, or describe the work if you don't.
+
+7. [Paragraph] What about that work appeals to you that your current job doesn't give you?
+
+8. [Paragraph] What do you think is missing from your CV for that role right now? Answer honestly - this decides how far a stretch we reach for.
+
+9. [Paragraph] TRACK 2 - THE BEST-PAID JOB YOU COULD GET TODAY. Which job titles could you walk into right now with the experience you already have? List every one you would accept, even the boring ones.
+
+10. [Short answer] For that kind of role, what salary would make it clearly worth moving for?
+
+11. [Paragraph] Is there any well-paid job you would refuse on principle, even for good money? Say so plainly.
+
+12. [Multiple choice] Right now, which matters more?
+      - The right job, money second
+      - Mostly the right job, but pay must not drop
+      - Even split - show me both
+      - Mostly the money, but not a dead end
+      - The money, clearly
+
+13. [Multiple choice] Do you want to build new things, or improve existing systems?
+      - Build from zero
+      - Mostly build
+      - Mostly improve
+      - Improve/optimise
+
+14. [Multiple choice] Early-stage chaos or established company structure?
+      - Seed/Series A
+      - Series B-C
+      - Late stage
+      - Large enterprise
+
+15. [Multiple choice] Would you take a harder role at lower pay if it moved you faster?
+      - Yes, clearly
+      - Maybe, depends
+      - No, pay matters now
+
+16. [Paragraph] What subject matter would you genuinely enjoy working on daily? Name it in your own words.
+
+17. [Multiple choice] What's your real preference on office days?
+      - Fully remote
+      - 1-2 days office
+      - 3-4 days office
+      - Don't care
+
+18. [Checkboxes] What would make you quit within 6 months?
+      - Rigid hierarchy
+      - No autonomy
+      - Constant firefighting
+      - Formal dress code
+      - Heavy travel
+      - Long commute
+      - Night shifts / US hours
+      - None of these
+
+19. [Paragraph] Anything else that is an absolute no? Night shifts, heavy travel, a specific company, a specific kind of team - name it.
+
+20. [Paragraph] Name 2-3 things you have actually shipped, run or fixed. Real ones, with numbers if you have them - how many users, how much money, how much faster.
+
+21. [Paragraph] What can you say that 95% of other applicants cannot? It can be a skill, a domain, a language, a market you know, anything.
+
+22. [Paragraph] Why are you switching now, in one honest sentence?

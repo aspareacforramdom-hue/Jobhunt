@@ -533,6 +533,42 @@ def cmd_check_links(args):
     conn.close()
 
 
+def cmd_form(args):
+    """
+    Write the Apps Script that builds the intake Google Form.
+
+    The questions come from config/profile_schema.yml, so the form and
+    the CSV importer cannot drift apart - which matters because answers
+    are matched back to questions BY THEIR TEXT, and one edited word
+    silently drops that answer from the profile.
+
+    Anything already decided can be passed as id=value and is shown as a
+    hint on the question rather than skipped, because she is allowed to
+    disagree with it.
+    """
+    import yaml
+
+    from core import formgen
+
+    with open("config/profile_schema.yml", encoding="utf-8") as f:
+        schema = yaml.safe_load(f)
+
+    known = dict(a.split("=", 1) for a in args if "=" in a)
+
+    with open("intake_form.gs", "w", encoding="utf-8") as f:
+        f.write(formgen.apps_script(schema, known=known))
+    with open("intake_questions.txt", "w", encoding="utf-8") as f:
+        f.write(formgen.plain_text(schema))
+
+    n = len(schema.get("dimensions", []))
+    print("Wrote intake_form.gs (%d questions) and intake_questions.txt" % n)
+    print("")
+    print("  1. open script.google.com and click New project")
+    print("  2. delete what is there, paste all of intake_form.gs")
+    print("  3. click Run, approve access when asked")
+    print("  4. the form link is printed in the box at the bottom")
+
+
 COMMANDS = {
     "intake": cmd_intake,
     "calibrate": cmd_calibrate,
@@ -546,6 +582,7 @@ COMMANDS = {
     "publish": cmd_publish,
     "migrate": cmd_migrate,
     "doctor": cmd_doctor,
+    "form": cmd_form,
     "check-links": cmd_check_links,
     "serve": cmd_serve,
 }

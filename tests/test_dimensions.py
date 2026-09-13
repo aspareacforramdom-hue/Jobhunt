@@ -270,3 +270,64 @@ def test_prefilter_years_ceiling_only_applies_when_the_profile_sets_one(
         [{"url": "u1", "title": "Brand Manager", "company": "X",
           "description": "requires 15+ years of experience"}],
         brand_profile)) == 1
+
+
+# ============================================================
+# The form and the importer must not drift apart
+# ============================================================
+def test_every_generated_question_matches_back(tmp_path):
+    """
+    THE failure this whole generator exists to prevent. Answers are
+    paired to the schema BY THE QUESTION TEXT, so one retyped word means
+    that answer is dropped and the profile compiles without it — no
+    error, just a worse job search.
+    """
+    import json
+
+    import yaml
+
+    from core import formgen
+    from web.intake_routes import match_answers
+
+    schema = yaml.safe_load(
+        open("config/profile_schema.yml", encoding="utf-8"))
+    script = formgen.apps_script(schema)
+    questions = json.loads(
+        script.split("var QUESTIONS = ", 1)[1].split(";\n\nfunction", 1)[0])
+
+    # exactly the CSV Google Forms would export from that form
+    row = {q["ask"]: f"answer-{q['id']}" for q in questions}
+    row["Timestamp"] = "2026/09/13 10:00:00"
+
+    answers, unmatched = match_answers(schema, row)
+
+    assert unmatched == []
+    assert set(answers) == {d["id"] for d in schema["dimensions"]}
+
+
+def test_both_tracks_survive_into_the_answers():
+    """The point of the rewrite: a dream job AND the best-paid job she
+    could take today, kept apart rather than averaged into one target."""
+    import yaml
+
+    schema = yaml.safe_load(
+        open("config/profile_schema.yml", encoding="utf-8"))
+    tracks = {d.get("track") for d in schema["dimensions"]}
+
+    assert "ideal" in tracks
+    assert "leverage" in tracks
+
+
+def test_the_script_is_balanced_javascript():
+    """A stray brace means she pastes it in and gets a syntax error with
+    no idea what to do."""
+    import yaml
+
+    from core import formgen
+
+    script = formgen.apps_script(
+        yaml.safe_load(open("config/profile_schema.yml", encoding="utf-8")))
+
+    assert script.count("{") == script.count("}")
+    assert script.count("(") == script.count(")")
+    assert "function buildForm()" in script
