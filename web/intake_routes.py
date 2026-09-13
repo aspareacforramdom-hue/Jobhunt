@@ -16,6 +16,7 @@ dimension is most uncertain; a static form cannot. v1 ships without it.
 
 import csv
 import io
+import re
 from urllib.parse import quote
 
 import yaml
@@ -50,17 +51,52 @@ def form_spec(schema):
     return out
 
 
+# Exact string matching on a question is brittle in exactly the way
+# that matters: the form is built by a person or a model, and both tidy
+# wording. Measured on the first real form, built by Gemini from the
+# generated prompt: 19 of 22 questions came back character-perfect and
+# three had the help text appended INTO the title —
+#
+#   Below what CTC would you say no, even to a great role? (help text:
+#   we have: 25 — change it if that's wrong)
+#
+# Under exact matching those three answers are dropped in silence and
+# the profile compiles with no salary floor, no cities and no notice
+# period. So the matcher normalises first and falls back to close
+# matching, and says out loud when it had to.
+_TRAILING_PAREN = re.compile(r"\s*\((?:help text|hint|note)\s*:.*?\)\s*$",
+                             re.I | re.S)
+_PUNCT_FOLD = {0x2018: "'", 0x2019: "'", 0x201c: '"', 0x201d: '"',
+               0x2013: "-", 0x2014: "-", 0x2026: "...", 0x00a0: " "}
+
+
+def normalise_question(text):
+    """Fold a question to the form two spellings of it can be compared in."""
+    text = (text or "").translate(_PUNCT_FOLD)
+    text = _TRAILING_PAREN.sub("", text)
+    text = re.sub(r"[^a-z0-9 ]+", " ", text.lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def match_answers(schema, row):
     """
     Map CSV headers back to schema dimension ids.
 
     Google Forms exports the question text as the header, so the match is
-    on the question, with a fallback to the id for a hand-edited sheet.
+    on the question: exactly first, then normalised, then on close
+    resemblance, then on the dimension id for a hand-edited sheet.
+
+    Returns (answers, unmatched). Anything matched loosely is recorded in
+    answers and reported by `fuzzy_matches` so a rewritten question is
+    visible rather than a hole in the profile.
     """
-    answers, unmatched = {}, []
-    by_question = {d["ask"].strip().lower(): d["id"]
-                   for d in schema.get("dimensions", [])}
-    by_id = {d["id"]: d["id"] for d in schema.get("dimensions", [])}
+    from difflib import SequenceMatcher
+
+    answers, unmatched, fuzzy = {}, [], []
+    dims = schema.get("dimensions", [])
+    by_question = {d["ask"].strip().lower(): d["id"] for d in dims}
+    by_norm = {normalise_question(d["ask"]): d["id"] for d in dims}
+    by_id = {d["id"]: d["id"] for d in dims}
 
     for header, value in (row or {}).items():
         # csv.DictReader hands back a None key holding a LIST when a row
@@ -75,13 +111,33 @@ def match_answers(schema, row):
         if not value.strip():
             continue
 
-        key = header.strip().lower()
-        dim = by_question.get(key) or by_id.get(header.strip())
+        bare = header.strip()
+        key = bare.lower()
+        norm = normalise_question(bare)
+
+        dim = (by_question.get(key) or by_norm.get(norm)
+               or by_id.get(bare))
+
+        if not dim and norm:
+            # Close enough that a human would call it the same question.
+            # 0.9 is deliberately tight: this is meant to survive a
+            # tidied word, not to guess at a question nobody asked.
+            best, score = None, 0.0
+            for cand, cand_id in by_norm.items():
+                if cand_id in answers:
+                    continue
+                r = SequenceMatcher(None, norm, cand).ratio()
+                if r > score:
+                    best, score = cand_id, r
+            if score >= 0.90:
+                dim, _ = best, fuzzy.append((bare, best, round(score, 3)))
+
         if dim:
             answers[dim] = value.strip()[:2000]
         elif key not in ("timestamp", "email address", "score"):
-            unmatched.append(header.strip())
+            unmatched.append(bare)
 
+    match_answers.fuzzy_matches = fuzzy
     return answers, unmatched
 
 

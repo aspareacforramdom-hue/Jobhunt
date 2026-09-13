@@ -331,3 +331,87 @@ def test_the_script_is_balanced_javascript():
     assert script.count("{") == script.count("}")
     assert script.count("(") == script.count(")")
     assert "function buildForm()" in script
+
+
+# ============================================================
+# The form WILL drift, and the profile must survive it
+# ============================================================
+def test_help_text_glued_into_a_title_still_matches():
+    """
+    Measured on the first real form, built by Gemini from the generated
+    prompt: 19 of 22 questions came back character-perfect and three had
+    the help text appended INTO the title. Under exact matching those
+    three were dropped in silence — and they were location, min_ctc and
+    notice_reality, which is to say the city, the salary floor and the
+    notice period. The profile would have compiled with no hard filters
+    at all and nobody would have been told.
+    """
+    import yaml
+
+    from web.intake_routes import match_answers
+
+    schema = yaml.safe_load(
+        open("config/profile_schema.yml", encoding="utf-8"))
+    row = {}
+    for d in schema["dimensions"]:
+        ask = " ".join(d["ask"].split())
+        if d["id"] in ("location", "min_ctc", "notice_reality"):
+            ask += " (help text: we have: 25 — change it if that's wrong)"
+        row[ask] = "an answer"
+    row["Timestamp"] = "2026/09/13 10:00:00"
+
+    answers, unmatched = match_answers(schema, row)
+
+    assert unmatched == []
+    assert set(answers) == {d["id"] for d in schema["dimensions"]}
+
+
+def test_smart_quotes_and_dashes_do_not_break_the_match():
+    """Google and Word both rewrite apostrophes. "don't" and "don't" are
+    the same question to a person and different bytes to a dict."""
+    import yaml
+
+    from web.intake_routes import match_answers
+
+    schema = yaml.safe_load(
+        open("config/profile_schema.yml", encoding="utf-8"))
+    row = {}
+    for d in schema["dimensions"]:
+        ask = " ".join(d["ask"].split())
+        row[ask.replace("'", "\u2019").replace(" - ", " \u2014 ")] = "x"
+
+    answers, _ = match_answers(schema, row)
+
+    assert set(answers) == {d["id"] for d in schema["dimensions"]}
+
+
+def test_a_genuinely_different_question_is_still_reported():
+    """Loose matching must not become guessing. A question nobody asked
+    has to surface as unmatched, not be assigned to the nearest thing."""
+    import yaml
+
+    from web.intake_routes import match_answers
+
+    schema = yaml.safe_load(
+        open("config/profile_schema.yml", encoding="utf-8"))
+
+    answers, unmatched = match_answers(
+        schema, {"What is your favourite colour?": "blue"})
+
+    assert answers == {}
+    assert unmatched == ["What is your favourite colour?"]
+
+
+def test_the_prompt_tells_the_model_where_help_text_goes():
+    """The generator caused the bug above by writing the hint as a
+    parenthetical on the question line."""
+    import yaml
+
+    from core import formgen
+
+    schema = yaml.safe_load(
+        open("config/profile_schema.yml", encoding="utf-8"))
+    prompt = formgen.gemini_prompt(schema, known={"min_ctc": "25"})
+
+    assert "DESCRIPTION FIELD" in prompt
+    assert "NOT be appended to the question title" in prompt

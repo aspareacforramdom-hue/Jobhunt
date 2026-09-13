@@ -18,12 +18,12 @@ import json
 TYPES = {"multi": "Checkboxes", "single": "Multiple choice",
          "number": "Short answer", "text": "Paragraph"}
 
-# Answers the schema asks for that we already know, so she is not made
-# to re-type what has already been decided. Shown as a prefilled hint in
-# the question rather than skipped, because she is allowed to disagree.
+# Answers we already know, so she is not made to re-type what has been
+# decided. Shown as help text UNDER the question rather than skipped,
+# because she is allowed to disagree with it.
 def _hint(dim, known):
     value = known.get(dim["id"])
-    return f"  (we have: {value} — change it if that's wrong)" if value else ""
+    return f"We have: {value}. Change it if that's wrong." if value else ""
 
 
 def apps_script(schema, title="Career Loop — job search intake",
@@ -140,6 +140,10 @@ def gemini_prompt(schema, known=None):
         "6. Do not collect email addresses. Turn the progress bar on.",
         "7. Do not add any questions of your own, and do not add section",
         "   headers, page breaks or images.",
+        "8. Where a question has a DESCRIPTION FIELD line under it, put",
+        "   that text in the question's description / help text box. It",
+        "   must NOT be appended to the question title. Appending it",
+        "   breaks the matching described in rule 1.",
         "",
         "When you are done, give me the link to fill in the form and the",
         "link to edit it.",
@@ -154,7 +158,14 @@ def gemini_prompt(schema, known=None):
             out.append(f"     - {o}")
         hint = _hint(d, known).strip()
         if hint:
-            out.append(f"     (help text: {hint.strip('() ')})")
+            # On its own line, labelled as a separate field and marked
+            # as NOT part of the title. Written as a parenthetical on the
+            # question line, Gemini appended it to the title instead:
+            #   "Below what CTC would you say no, even to a great role?
+            #    (help text: we have: 25 - change it if that's wrong)"
+            # which broke the join between that answer and the profile.
+            out.append(f'     DESCRIPTION FIELD (do NOT put this in the '
+                       f'question title): "{hint}"')
         out.append("")
     return "\n".join(out)
 

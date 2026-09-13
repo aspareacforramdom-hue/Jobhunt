@@ -26,6 +26,10 @@ RULES, and the first one matters more than the rest:
 6. Do not collect email addresses. Turn the progress bar on.
 7. Do not add any questions of your own, and do not add section
    headers, page breaks or images.
+8. Where a question has a DESCRIPTION FIELD line under it, put
+   that text in the question's description / help text box. It
+   must NOT be appended to the question title. Appending it
+   breaks the matching described in rule 1.
 
 When you are done, give me the link to fill in the form and the
 link to edit it.
@@ -37,17 +41,17 @@ Here are the questions.
 2. [Short answer] What is your current CTC? This is only used to judge whether a job is actually a raise - it is never sent anywhere.
 
 3. [Paragraph] Which cities would you actually work in? Be honest about relocation, and say 'remote only' if that's the truth.
-     (help text: we have: Bangalore or fully remote — change it if that's wrong)
+     DESCRIPTION FIELD (do NOT put this in the question title): "We have: Bangalore or fully remote. Change it if that's wrong."
 
 4. [Short answer] Below what CTC would you say no, even to a great role?
-     (help text: we have: 25 — change it if that's wrong)
+     DESCRIPTION FIELD (do NOT put this in the question title): "We have: 25. Change it if that's wrong."
 
 5. [Multiple choice] How soon can you actually start?
      - Immediately
      - 1 month
      - 2-3 months
      - Flexible
-     (help text: we have: 2-3 months — change it if that's wrong)
+     DESCRIPTION FIELD (do NOT put this in the question title): "We have: 2-3 months. Change it if that's wrong."
 
 6. [Paragraph] TRACK 1 - THE JOB YOU WANT. What role do you want to be doing in two years? Give the job title if you know it, or describe the work if you don't.
 

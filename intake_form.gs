@@ -33,7 +33,7 @@ var QUESTIONS = [
   {
     "id": "location",
     "ask": "Which cities would you actually work in? Be honest about relocation, and say 'remote only' if that's the truth.",
-    "help": "Answer in your own words.  (we have: Bangalore or fully remote — change it if that's wrong)",
+    "help": "Answer in your own words.We have: Bangalore or fully remote. Change it if that's wrong.",
     "type": "text",
     "options": [],
     "track": ""
@@ -41,7 +41,7 @@ var QUESTIONS = [
   {
     "id": "min_ctc",
     "ask": "Below what CTC would you say no, even to a great role?",
-    "help": "  (we have: 25 — change it if that's wrong)",
+    "help": "We have: 25. Change it if that's wrong.",
     "type": "number",
     "options": [],
     "track": ""
@@ -49,7 +49,7 @@ var QUESTIONS = [
   {
     "id": "notice_reality",
     "ask": "How soon can you actually start?",
-    "help": "  (we have: 2-3 months — change it if that's wrong)",
+    "help": "We have: 2-3 months. Change it if that's wrong.",
     "type": "single",
     "options": [
       "Immediately",
