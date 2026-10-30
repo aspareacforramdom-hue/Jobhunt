@@ -150,3 +150,5 @@ Set `CAREERLOOP_HTML_FETCHER=requests` before starting to select that fallback.
 ## Parallel public scraping
 
 Direct ATS and Scrapling collectors share six workers. Up to two generic career pages per batch receive Playwright fallback. Trafilatura cleans identified job descriptions without AI. Source failures stay visible. See [tool comparison and operating limits](docs/OPEN_SOURCE_SCRAPING.md). Run `py -3.11 run.py sources --scan 30` for a free bounded batch.
+#   J o b h u n t  
+ 
