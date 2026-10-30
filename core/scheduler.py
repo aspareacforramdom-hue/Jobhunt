@@ -23,6 +23,7 @@ still finish and B gets an error row in `runs`.
 """
 
 import json
+import hashlib
 import os
 import threading
 import traceback
@@ -30,8 +31,9 @@ from datetime import datetime, timedelta
 
 import yaml
 
-from core import (db, discover, filter as flt, firecrawl, linkcheck,
+from core import (db, discover, firecrawl, linkcheck,
                   notify, prefilter, reviews, score)
+from core.scan_lock import ScanLock
 
 SLOTS = [(7, 0), (18, 0)]          # Asia/Kolkata
 MIN_GAP_HOURS = 3
@@ -178,6 +180,7 @@ class Scanner:
         self.sources = {}
         self._lock = threading.Lock()
         self._thread = None
+        self._process_lock = ScanLock(db_path or db.DB_PATH)
         self._state = {"running": False, "phase": "idle", "found": 0,
                        "kind": None, "notes": [], "error": None}
 
@@ -249,6 +252,20 @@ class Scanner:
             state["last_finished"] = last["finished_at"] if last else None
             state["last_found"] = last["jobs_found"] if last else 0
             state["cooldown"] = self.cooldown_remaining(conn)
+            report = db._unj(db.get_setting(conn, "last_discovery_report", "{}"), {})
+            if not isinstance(report, dict):
+                report = {}
+            if report.get("finished") and report["finished"] > (state["last_finished"] or ""):
+                state["last_finished"] = report["finished"]
+                state["last_found"] = report.get("found", 0)
+                if not state.get("running") and not state.get("notes"):
+                    state["notes"] = report.get("notes", [])
+            durable = db._unj(db.get_setting(conn, "last_scan_status", "{}"), {})
+            if not state["running"] and not state.get("error") and isinstance(durable, dict) and durable:
+                state.update({key: durable[key] for key in ("phase", "found", "notes", "error")
+                              if key in durable})
+            if not state["running"] and self._process_lock.busy():
+                state.update(running=True, phase="scanning in another window")
         finally:
             conn.close()
         return state
@@ -265,6 +282,8 @@ class Scanner:
         with self._lock:
             if self._state["running"]:
                 return False, "A scan is already running"
+            if self._process_lock.busy():
+                return False, "A scan is already running in another window"
 
             if not override:
                 conn = db.connect(self.db_path)
@@ -293,6 +312,10 @@ class Scanner:
         return True, "Scan started"
 
     def _run(self, kind):
+        if not self._process_lock.acquire():
+            self._set(error="A scan is already running in another window", phase="failed", running=False)
+            return
+        self._set(running=True, phase="starting", found=0, error=None, notes=[], kind=kind)
         try:
             conn = db.connect(self.db_path)
         except Exception as e:                       # noqa: BLE001
@@ -301,6 +324,7 @@ class Scanner:
             # `running` set forever — the same wedge as above.
             traceback.print_exc()
             self._set(error=str(e), phase="failed", running=False)
+            self._process_lock.release()
             return
         try:
             self._scan(conn, kind)
@@ -308,11 +332,20 @@ class Scanner:
             traceback.print_exc()
             self._set(error=str(e), phase="failed")
         finally:
-            conn.close()
-            self._set(running=False)
+            try:
+                conn.rollback()
+                db.set_setting(conn, "last_scan_status", json.dumps({
+                    **self._state, "running": False, "finished": db.now()}))
+            finally:
+                conn.close()
+                self._process_lock.release()
+                self._set(running=False)
 
     # ------------------------------------------------------------
     def _scan(self, conn, kind):
+        # Legacy source-only requests now use the complete normal pipeline.
+        if kind == "wide":
+            kind = "manual"
         users = [u for u in db.all_users(conn)
                  if db.load_profile(conn, u["id"])]
         if not users:
@@ -332,18 +365,35 @@ class Scanner:
         with open(self.sources_path, encoding="utf-8") as f:
             sources = yaml.safe_load(f) or {}
         self.sources = sources
+        if kind == "score":
+            pool = [dict(r) for r in conn.execute(
+                "SELECT * FROM jobs WHERE closed_at IS NULL ORDER BY found_at DESC, id DESC")]
+            for job in pool:
+                job.update(json.loads(job.get("metadata_json") or "{}"))
+            job_ids = {j["url"]: j["id"] for j in pool}
+            self._set(phase="scoring saved jobs")
+            for user in users:
+                self._score_for_user(conn, user, profiles[user["id"]], pool, job_ids, kind)
+            self._set(phase="failed" if self._state.get("error") else "idle")
+            return
         _merge_discovered_boards(conn, sources)
         all_terms = sorted(terms)
         sources.setdefault("jobspy", {})["search_terms"] = all_terms
         sources["jobspy"]["locations"] = sorted(locations) or \
             sources["jobspy"].get("default_locations", [])
 
+        if sources.get("rescore_on_profile_change"):
+            offset = int(db.get_setting(conn, "free_search_offset", "0"))
+            sources["jobspy"]["search_offset"] = offset
+            db.set_setting(conn, "free_search_offset", str(offset + int(sources["jobspy"].get("max_searches_per_scan", 6))))
+
         # The free tiers search on everything; the PAID tier gets a
         # rotating slice, because three people between them have far more
         # keywords than one scan can afford. Taking the first N every
         # time would mean the tail is never searched at all.
-        paid = _rotate_terms(conn, all_terms,
-                             sources.get("apify", {}).get("max_terms_per_scan"))
+        paid = (_rotate_terms(conn, sources.get("apify", {}).get("keywords") or all_terms,
+                              sources.get("apify", {}).get("max_terms_per_scan"))
+                if kind != "discover" and not self.dry else [])
         apify_cfg = sources.setdefault("apify", {})
         apify_cfg["search_terms"] = paid
         # Which keywords have already had their one deep seeding pass.
@@ -359,7 +409,17 @@ class Scanner:
             conn, discover.LINKEDIN_BACKFILL_KEY)
 
         self._set(phase="searching")
-        raw, notes = discover.discover_all(sources, dry=self.dry)
+        raw, notes = discover.discover_all(sources, dry=self.dry or kind == "discover")
+        if sources.get("career_registry", {}).get("enabled") and not self.dry:
+            from core import source_registry
+            self._set(phase="checking career pages")
+            extra, coverage = source_registry.scan_batch(conn,
+                limit=sources["career_registry"].get("batch_size", 1000),
+                pages=sources["career_registry"].get("pages_per_source", 2),
+                progress=lambda done, total, found: self._set(
+                    phase=f"checking career pages {done}/{total}", found=found))
+            raw.extend(extra)
+            notes.extend(coverage)
         _remember_seeded(conn, apify_cfg.get("_seeded_terms"))
         _remember_seeded(conn, li_cfg.get("_seeded_terms"),
                          discover.LINKEDIN_BACKFILL_KEY)
@@ -376,17 +436,33 @@ class Scanner:
                          f"— queued for checking")
 
         fresh = self._dedup(conn, raw)
-        job_ids = {}
-        for j in fresh:
-            jid = db.upsert_job(conn, j)
-            if jid:
-                job_ids[j["url"]] = jid
+        # Refresh existing postings too; a previously saved snippet must not
+        # hide today's fuller description, salary, or changed job title.
+        for j in raw:
+            db.upsert_job(conn, j)
         conn.commit()
-        self._set(found=len(fresh), phase="scoring")
+        self._set(found=len(fresh), phase="matching saved jobs" if kind == "discover" else "scoring")
 
+        # Discovery and scoring have separate completion states. The shared
+        # pool also contains dry-run rows, failed batches, shortlist overflow,
+        # and listings discovered before a user completed intake.
+        pool = [dict(r) for r in conn.execute(
+            "SELECT * FROM jobs WHERE closed_at IS NULL ORDER BY found_at DESC, id DESC")]
+        fresh_by_url = {j["url"]: j for j in fresh}
+        for j in pool:
+            j.update(json.loads(j.get("metadata_json") or "{}"))
+            j.update(fresh_by_url.get(j["url"], {}))
+        job_ids = {j["url"]: j["id"] for j in pool}
         for user in users:
             self._score_for_user(conn, user, profiles[user["id"]],
-                                 fresh, job_ids, kind)
+                                 pool, job_ids, kind)
+        if kind == "discover":
+            notes.append(f"Saved {len(fresh)} new listings. Matched saved roles locally; no AI calls or paid scraper runs.")
+            db.set_setting(conn, "last_discovery_report", json.dumps({
+                "finished": db.now(), "found": len(fresh), "notes": notes}))
+            self._set(found=len(fresh), notes=notes,
+                      phase="failed" if self._state.get("error") else "idle")
+            return
 
         # The free closure above only covers boards that answer in full.
         # Sweep a slice of what is left, oldest first, so a backlog
@@ -400,7 +476,7 @@ class Scanner:
             # Never let housekeeping lose a scan that already succeeded.
             print(f"  [linkcheck] skipped: {e}")
 
-        self._set(phase="idle")
+        self._set(phase="failed" if self._state.get("error") else "idle")
 
     @staticmethod
     def _flag_missing(conn, raw, stamp):
@@ -454,9 +530,12 @@ class Scanner:
         on every single scan.
         """
         known = db.known_urls(conn)
-        unseen = [j for j in raw if j.get("url")
-                  and db.normalize_url(j["url"]) not in known]
-        fresh, _ = flt.filter_jobs(unseen, {}, seen=set())
+        fresh = []
+        for job in raw:
+            url = db.normalize_url(job.get("url"))
+            if url and url not in known:
+                fresh.append(dict(job, url=url))
+                known.add(url)
         return fresh
 
     def _score_for_user(self, conn, user, profile, fresh, job_ids, kind):
@@ -474,14 +553,53 @@ class Scanner:
             # passing the originals meant user B's listings arrived
             # carrying user A's score and angle, and any listing B's
             # batch failed to score kept A's opinion of it.
-            candidates = prefilter.prefilter([dict(j) for j in fresh], profile)
-
             # Never pay to score something this user already has an
             # opinion on.
-            already = {r["id"] for r in conn.execute(
-                "SELECT job_id id FROM user_jobs WHERE user_id=?", (user_id,))}
-            candidates = [c for c in candidates
-                          if job_ids.get(c["url"]) not in already]
+            from core.personal import revision
+            rows = [dict(r) for r in conn.execute(
+                "SELECT job_id id, score, profile_revision, status, evaluation_json FROM user_jobs WHERE user_id=?", (user_id,))]
+            revision_id = revision(profile)
+            prior = {r["id"]: r for r in rows}
+            already = {r["id"] for r in rows if r["score"] is not None and (
+                       r["status"] != "new" or (
+                           json.loads(r["evaluation_json"] or "{}").get("rating_provider") != "local"
+                           and (not self.sources.get("rescore_on_profile_change")
+                                or r["profile_revision"] == revision_id)))}
+            originals = [dict(j) for j in fresh if job_ids.get(j["url"]) not in already]
+            candidates = prefilter.prefilter(originals, profile,
+                                             top_n=len(originals), min_keep=len(originals))
+            relevant_urls = {j["url"] for j in candidates}
+            from core import constraints, personal
+            for job in originals:
+                evaluation = job.get("evaluation") or constraints.assess(job, profile)
+                evaluation["role_relevant"] = job["url"] in relevant_urls
+                source_evidence = [job.get(field) for field in (
+                    "title", "location", "description", "salary_text",
+                    "salary_min_lpa", "salary_max_lpa")]
+                evaluation["job_fingerprint"] = hashlib.sha256(
+                    json.dumps(source_evidence, default=str, ensure_ascii=False).encode()).hexdigest()[:16]
+                job["evaluation"] = evaluation
+                job["profile_revision"] = revision_id
+            # Every unassessed saved listing gets a cheap résumé/trajectory
+            # rating. Hard-filtered or unrelated listings remain labelled and
+            # hidden from the application board, but retain their assessment.
+            score._local_score_jobs(originals, profile)
+            if not self.dry:
+                for job in originals:
+                    jid = job_ids.get(job["url"])
+                    if jid and job.get("score") is not None:
+                        previous = prior.get(jid)
+                        previous_eval = json.loads(previous["evaluation_json"] or "{}") if previous else {}
+                        if (not previous or previous["score"] is None
+                                or previous["profile_revision"] != revision_id
+                                or previous_eval.get("rating_provider") != "local"
+                                or previous_eval.get("job_fingerprint") != job["evaluation"].get("job_fingerprint")):
+                            db.upsert_user_job(conn, user_id, jid, job, commit=False)
+            conn.commit()
+            if kind == "discover":
+                db.finish_run(conn, run_id, "discovery", len(originals))
+                return
+            candidates = candidates[:40]
 
             # Firecrawl search returns a snippet, not a description, and
             # the scorer cannot judge a role from a snippet. Buy the full
@@ -489,8 +607,23 @@ class Scanner:
             # so credits are only spent on listings that will actually be
             # scored. Doing it during discovery would cost several times
             # more for pages thrown away seconds later.
-            firecrawl.enrich_descriptions(
-                candidates, self.sources.get("firecrawl", {}), dry=self.dry)
+            if kind != "score":
+                firecrawl.enrich_descriptions(
+                    candidates, self.sources.get("firecrawl", {}), dry=self.dry)
+            if hasattr(firecrawl, "take_notes"):
+                self._set(notes=self._state["notes"] + firecrawl.take_notes())
+            if kind != "score" and self.sources.get("enrich_public_descriptions") and not self.dry:
+                from core.enrich import enrich
+                enrich_limit = self.sources.get(
+                    "public_enrichment_candidates",
+                    self.sources.get("max_candidates", 24))
+                enrich(candidates[:max(1, min(int(enrich_limit), 40))])
+                # Initial ranking often sees only an ATS title. Rank again after
+                # fetching duties so vague manager titles stop beating real fits.
+                candidates = prefilter.prefilter(
+                    candidates, profile,
+                    top_n=self.sources.get("max_candidates", 12),
+                    min_keep=self.sources.get("max_candidates", 12))
             for c in candidates:
                 if c.get("description"):
                     db.upsert_job(conn, c)
@@ -508,19 +641,32 @@ class Scanner:
                 db.finish_run(conn, run_id, "dry", len(candidates))
                 return
 
-            scored = score.score_jobs(candidates, profile)
+            candidates = candidates[:max(1, min(12, int(self.sources.get("max_candidates", 12))))]
+            for candidate in candidates:
+                candidate["evaluation"] = constraints.assess(candidate, profile)
+                candidate["profile_revision"] = personal.revision(profile)
+            candidates = [c for c in candidates if c["evaluation"]["eligible"]]
+            scoring_profile = dict(profile)
+            scoring_profile["_scoring"] = self.sources.get("scoring", {})
+            scored = score.score_jobs(candidates, scoring_profile)
 
             # Candidates in, nothing out, means every batch failed —
-            # almost always a missing or rejected ANTHROPIC_API_KEY.
+            # usually means a missing or rejected OpenAI API key.
             # score_jobs catches per batch so one bad batch cannot lose
             # the rest, and the cost of that was a total failure looking
             # identical to a quiet market: the run was booked "ok, 0
             # found", the header went green, and the 3-hour cooldown
             # started. Say what happened instead.
             if candidates and not scored:
+                provider = (self.sources.get("scoring") or {}).get("provider")
+                help_text = ("Check the Codex ChatGPT login and usage allowance."
+                             if provider == "codex" else "Check OPENAI_API_KEY or scoring settings.")
                 raise RuntimeError(
-                    f"scored 0 of {len(candidates)} candidates — every LLM "
-                    f"call failed. Check ANTHROPIC_API_KEY.")
+                    f"No valid ratings for {len(candidates)} candidates. {help_text}")
+            if len(scored) < len(candidates):
+                self._set(notes=self._state["notes"] + [
+                    f"Rated {len(scored)} of {len(candidates)} shortlisted jobs; "
+                    "incomplete evidence remains visible as unrated leads."])
 
             # One transaction for the whole board. Each commit is an
             # fsync, and this was doing one per scored listing — 60
@@ -531,10 +677,19 @@ class Scanner:
                 jid = job_ids.get(j["url"])
                 if jid:
                     db.upsert_user_job(conn, user_id, jid, j, commit=False)
-                reviews.enrich_from_listing(conn, j)
             conn.commit()
 
             db.finish_run(conn, run_id, "ok", len(scored))
+            self._set(found=len(scored))
+
+            # Review caching commits independently; it must not commit a
+            # partially written board or turn a successful score into an error.
+            for j in scored:
+                try:
+                    reviews.enrich_from_listing(conn, j)
+                except Exception as e:
+                    conn.rollback()
+                    print(f"  [reviews] listing rating skipped: {e}")
 
             # OFF during scans by default, and this is the single
             # biggest saving available.
@@ -552,10 +707,13 @@ class Scanner:
                 except Exception as e:
                     print(f"  [reviews] enrichment skipped: {e}")
 
-            notify.send_scan_summary(user, scored, PORTAL_URL, dry=self.dry)
+            if (self.sources.get("notifications") or {}).get("enabled", False):
+                notify.send_scan_summary(user, scored, PORTAL_URL, dry=self.dry)
 
         except Exception as e:
+            conn.rollback()
             traceback.print_exc()
             db.finish_run(conn, run_id, "error", 0, str(e))
+            self._set(error=str(e), phase="failed")
             print(f"  [scan] {user['username']} failed, other users "
                   f"unaffected: {e}")

@@ -204,6 +204,8 @@ hr.rule { border: 0; border-top: 1px solid var(--rule); margin: 0; }
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 
 /* Live scan state. A quiet pulse, not a spinner. */

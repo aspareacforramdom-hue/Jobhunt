@@ -19,7 +19,7 @@ seniority if the user's own profile states a ceiling.
 
 import re
 
-from core import semantic
+from core import constraints, semantic
 
 
 def _tokens(phrases):
@@ -35,13 +35,9 @@ def _wanted(profile):
     What this person's target is made of, as whole phrases and as loose
     words. Computed once per scan, not once per listing.
     """
-    target = profile.get("target", {}) or {}
     # search_terms come from calibrate — what the market actually calls
     # this role, which is often not what the user called it.
-    phrases = [p.strip().lower() for p in
-               ([target.get("role_family", "")]
-                + list(target.get("alt_titles", []) or [])
-                + list(profile.get("search_terms", []) or [])) if p and p.strip()]
+    phrases = [p.lower() for p in semantic.anchors(profile)]
     return phrases, _tokens(phrases)
 
 
@@ -74,21 +70,43 @@ def _title_signal(title, phrases, tokens):
 
 
 def _location_ok(loc, allowed):
-    if not allowed:
-        return True
-    l = (loc or "").lower()
-    if not l:
-        return True
-    if any("anywhere" in a.lower() or "remote" in a.lower() for a in allowed):
-        return True
-    return any(a.split(",")[0].strip().lower() in l for a in allowed)
+    return constraints.location_ok(loc, allowed)
+
+
+def dedupe_roles(jobs):
+    """Collapse the same vacancy copied across official boards and aggregators."""
+    source_quality = {
+        "greenhouse": 3, "lever": 3, "ashby": 3, "workday": 3,
+        "eightfold": 3, "successfactors": 3, "goldman": 3,
+        "naukri": 2, "linkedin": 1, "indeed": 1,
+    }
+    chosen = {}
+    order = []
+    for index, job in enumerate(jobs):
+        company = re.sub(r"\W+", "", (job.get("company") or "").lower())
+        title = re.sub(r"\W+", " ", (job.get("title") or "").lower()).strip()
+        location = constraints.normalized(job.get("location"))
+        city = location.split(",", 1)[0].strip()
+        if "bengaluru" in city:
+            city = "bengaluru"
+        # Unknown company or location cannot safely identify a duplicate.
+        key = (company, title, city) if company and title and city else ("url", job.get("url"))
+        quality = (source_quality.get(job.get("source"), 0),
+                   len(job.get("description") or ""))
+        current = chosen.get(key)
+        if current is None:
+            chosen[key] = (quality, index, job)
+            order.append(key)
+        elif quality > current[0]:
+            chosen[key] = (quality, current[1], job)
+    return [chosen[key][2] for key in order]
 
 
 def _years_required(text):
     """Largest 'N+ years' figure a listing asks for, or None."""
     found = [int(m) for m in
              re.findall(r"(\d{1,2})\s*\+?\s*(?:-\s*\d{1,2}\s*)?"
-                        r"(?:years|yrs)\b", text or "", re.I)]
+                        r"(?:years|yrs)\b", text or "", re.IGNORECASE)]
     return max(found) if found else None
 
 
@@ -110,6 +128,7 @@ def prefilter(jobs, profile, top_n=40, min_keep=20,
     the best thing we found today", with an absolute floor underneath it
     for the days when the best thing found is not good at all.
     """
+    jobs = dedupe_roles(jobs)
     hf = profile.get("hard_filters", {}) or {}
     excl = [e.lower() for e in hf.get("exclude_keywords", []) if e]
     excl_titles = [t.lower() for t in hf.get("exclude_titles", []) if t]
@@ -155,6 +174,9 @@ def prefilter(jobs, profile, top_n=40, min_keep=20,
         if any(t in low_title for t in excl_titles):
             continue
         if not _location_ok(j.get("location"), locs):
+            continue
+        j["evaluation"] = constraints.assess(j, profile)
+        if not j["evaluation"]["eligible"]:
             continue
         if ceiling is not None:
             need = _years_required(blob)

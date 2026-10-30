@@ -195,6 +195,8 @@ def rank(jobs, profile):
     """
     if not jobs:
         return []
+    if not available():
+        return None
     model = _load()
     if model is None:
         return None

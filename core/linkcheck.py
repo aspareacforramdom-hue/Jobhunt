@@ -82,10 +82,10 @@ def candidates(conn, limit=200):
     front of a queue that is always shorter than the pool.
     """
     return [r["url"] for r in conn.execute(
-        "SELECT DISTINCT j.url, j.missing_since, j.found_at FROM jobs j "
+        "SELECT DISTINCT j.url, j.missing_since, j.found_at, j.link_checked_at FROM jobs j "
         "JOIN user_jobs uj ON uj.job_id = j.id "
         "WHERE j.closed_at IS NULL AND uj.status = 'new' AND j.url IS NOT NULL "
-        "ORDER BY (j.missing_since IS NULL), j.found_at ASC "
+        "ORDER BY j.link_checked_at ASC, (j.missing_since IS NULL), j.found_at ASC, j.url "
         "LIMIT ?", (limit,))]
 
 
@@ -105,6 +105,11 @@ def sweep(conn, limit=200, verbose=True):
 
     gone = [u for u, is_gone, _ in results if is_gone]
     closed = db.close_urls(conn, gone)
+    # Record attempts, including timeouts: otherwise the same live or
+    # unreachable prefix monopolises every bounded sweep indefinitely.
+    stamp = db.now()
+    conn.executemany("UPDATE jobs SET link_checked_at=? WHERE url=?",
+                     [(stamp, u) for u in urls])
     conn.commit()
 
     if verbose:

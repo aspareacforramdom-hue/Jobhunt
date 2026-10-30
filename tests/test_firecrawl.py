@@ -70,7 +70,7 @@ def test_search_does_not_scrape_its_results(monkeypatch):
 def test_enrichment_happens_only_after_the_prefilter(monkeypatch):
     """The scan must not buy full text for listings it then discards."""
     rec = Recorder({"/scrape": {"success": True,
-                                "data": {"markdown": "full text"}}})
+                                "data": {"markdown": "Lead customer operations and improve service delivery. " * 10}}})
     monkeypatch.setattr(firecrawl, "_post", rec)
 
     survivors = [{"url": "https://a/1", "needs_enrichment": True,
@@ -78,7 +78,8 @@ def test_enrichment_happens_only_after_the_prefilter(monkeypatch):
     firecrawl.enrich_descriptions(survivors, _cfg())
 
     assert rec.paths() == ["/scrape"]
-    assert survivors[0]["description"] == "full text"
+    assert rec.calls[0][1]["proxy"] == "basic"
+    assert survivors[0]["description"].startswith("Lead customer operations")
     assert survivors[0]["needs_enrichment"] is False
 
 
@@ -378,3 +379,34 @@ def test_duplicate_urls_across_terms_are_returned_once(monkeypatch):
     rows = firecrawl.search_jobs(_cfg(), ["term one", "term two"], ["Mumbai"])
 
     assert len(rows) == 2, "the same listing was returned once per term"
+
+
+def test_glassdoor_search_page_is_not_a_job(monkeypatch):
+    search_page = ("https://www.glassdoor.com/Job/bangalore-client-services-manager-"
+                   "jobs-SRCH_IL.0,9_IM1091_KO10,33.htm")
+    posting = "https://careers.example.com/job/client-services-manager/123"
+    def answer(path, payload):
+        assert "-site:glassdoor.com" in payload["query"]
+        return {"success": True, "data": {"web": [
+            {"title": "Client services manager, Bangalore, India - Glassdoor",
+             "url": search_page},
+            {"title": "Client Services Manager", "url": posting},
+        ]}}
+    monkeypatch.setattr(firecrawl, "_post", answer)
+    rows = firecrawl.search_jobs(_cfg(max_terms_per_scan=1,
+                                      individual_postings_only=True),
+                                 ["client services manager"], ["Bengaluru"])
+    assert [row["url"] for row in rows] == [posting]
+
+
+def test_document_result_is_not_a_job_posting(monkeypatch):
+    document = "https://pdfcoffee.com/sample-database-product-companiesxls-pdf-free.html"
+    posting = "https://careers.example.com/job/client-services-manager/123"
+    monkeypatch.setattr(firecrawl, "_post", lambda *a: {
+        "success": True, "data": {"web": [
+            {"title": "Sample Database Product Companies.xls", "url": document},
+            {"title": "Client Services Manager", "url": posting}]}})
+    rows = firecrawl.search_jobs(_cfg(max_terms_per_scan=1,
+                                      individual_postings_only=True),
+                                 ["client services manager"], ["Bengaluru"])
+    assert [row["url"] for row in rows] == [posting]

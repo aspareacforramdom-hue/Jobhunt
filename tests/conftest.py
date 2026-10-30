@@ -10,6 +10,18 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+# Never inherit live paid-service keys into tests. Individual tests set fakes.
+for _name in ("OPENAI_API_KEY", "APIFY_TOKEN", "FIRECRAWL_API_KEY", "TELEGRAM_BOT_TOKEN"):
+    os.environ.pop(_name, None)
+
+
+@pytest.fixture(autouse=True)
+def isolate_usage_ledger(tmp_path, monkeypatch):
+    from core import usage, firecrawl_budget, firecrawl
+    monkeypatch.setattr(usage, 'PATH', tmp_path / 'usage.db')
+    monkeypatch.setattr(firecrawl_budget, 'LEDGER', tmp_path / 'firecrawl-budget.db')
+    firecrawl.take_notes()
+
 
 @pytest.fixture
 def ai_pm_profile():

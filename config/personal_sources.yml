@@ -1,0 +1,59 @@
+# One candidate. Free breadth and bounded scrapers; Codex rates at most 12 leads.
+max_candidates: 12
+public_enrichment_candidates: 24
+scoring:
+  efficient: true
+  provider: codex
+  model: gpt-6-luna
+  description_chars: 3000
+jobspy:
+  enabled: true
+  sites: [indeed, linkedin]
+  country_indeed: India
+  results_wanted: 15
+  hours_old: 168
+  # Fetch full pages only for shortlisted jobs in the enrichment stage.
+  fetch_descriptions: false
+  max_searches_per_scan: 6
+  try_naukri_free: false
+ats_targets:
+  greenhouse: [stripe, groww]
+  lever: [zeta, epifi]
+apify:
+  enabled: true
+  budget_guard: true
+  naukri_actor: muhammetakkurtt/naukri-job-scraper
+  max_terms_per_scan: 1
+  max_spend_per_scan_usd: 0.25
+  results_wanted: 50
+  backfill_results_wanted: 50
+  fetch_details: true
+  freshness: '7'
+  backfill_freshness: '7'
+  company_jobs_only: true
+  experience: '5'
+  keywords: ['operations manager', 'client service', 'client onboarding', 'KYC', 'service delivery', 'process improvement']
+  prices:
+    run_init_usd: 0.001
+    standard_job_usd: 0.0015
+    detailed_job_usd: 0.003
+linkedin:
+  enabled: false
+firecrawl:
+  enabled: true
+  rotate_daily: true
+  individual_postings_only: true
+  search_enabled: true
+  max_terms_per_scan: 1
+  results_per_term: 5
+  max_pages_per_scan: 0
+  max_enrich_per_scan: 4
+reviews:
+  enrich_during_scan: false
+rescore_on_profile_change: true
+enrich_public_descriptions: true
+
+career_registry:
+  enabled: true
+  batch_size: 1000
+  pages_per_source: 2

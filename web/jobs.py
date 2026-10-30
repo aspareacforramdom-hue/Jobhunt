@@ -8,6 +8,7 @@ alone is enough to read a row.
 """
 
 import math
+import os
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
@@ -96,6 +97,11 @@ def register(app, db_path=None):
         finally:
             conn.close()
 
+        if request.app.state.single_user:
+            from core.constraints import assess
+            from core.personal import revision
+            job["evaluation"] = {**(job.get("evaluation") or {}), **assess(job, profile or {})}
+            job["score_stale"] = job.get("score") is not None and job.get("profile_revision") != revision(profile or {})
         rows = breakdown_rows(job, profile)
         return page(request, "detail.html", job=job, profile=profile,
                     breakdown=rows, company=company,
@@ -147,6 +153,10 @@ def register(app, db_path=None):
     @app.post("/jobs/{job_id}/reviews")
     def fetch_reviews(request: Request, job_id: int):
         """On-demand review lookup for a company the user is looking at."""
+        if request.app.state.single_user:
+            return RedirectResponse(
+                f"/jobs/{job_id}?msg=Paid+reviews+disabled+to+protect+the+5+dollar+job+search+budget",
+                status_code=303)
         conn = _conn()
         try:
             job = db.get_user_job(conn, _uid(request), job_id)
@@ -169,7 +179,7 @@ def register(app, db_path=None):
     # Prepare  (Phase 3)
     # ------------------------------------------------------------
     @app.post("/jobs/{job_id}/prepare")
-    def prepare(request: Request, job_id: int):
+    def prepare(request: Request, job_id: int, refresh: bool = Form(False)):
         if request.app.state.dry:
             return RedirectResponse(
                 f"/jobs/{job_id}?msg=Dry+run+—+no+LLM+calls+made",
@@ -182,6 +192,15 @@ def register(app, db_path=None):
             if not job:
                 return RedirectResponse("/jobs?msg=Not+found", status_code=303)
             profile = db.load_profile(conn, user_id)
+
+            existing = db.get_application(conn, user_id, job_id)
+            if request.app.state.single_user and not refresh and existing and existing.get('tailored'):
+                return RedirectResponse(f"/applications/{job_id}?msg=Saved+draft+reused.+No+AI+call.", status_code=303)
+
+            if request.app.state.single_user and not os.environ.get("OPENAI_API_KEY"):
+                return RedirectResponse(
+                    f"/jobs/{job_id}?msg=Draft+generation+is+unavailable+in+the+no-API+setup.+Saved+drafts+remain+available.+Job+scoring+uses+Codex.",
+                    status_code=303)
 
             try:
                 tailored, outreach = tailor.prepare_application(job, profile)
@@ -242,7 +261,9 @@ def register(app, db_path=None):
                 source=q.get("source") or None,
                 since=_since(q.get("days")),
                 search=q.get("q") or None,
-                order=q.get("order") or "score")
+                order=q.get("order") or "score",
+                track=(q.get("track")
+                       if q.get("track") in ("ideal", "leverage") else None))
             profile = db.load_profile(conn, _uid(request))
         finally:
             conn.close()

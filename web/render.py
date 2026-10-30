@@ -59,6 +59,7 @@ def page(request, name, **context):
     context.setdefault("user", user)
     context.setdefault("msg", request.query_params.get("msg"))
     context.setdefault("scan", request.app.state.scanner.status())
+    context.setdefault("drafts_available", bool(os.environ.get("OPENAI_API_KEY")))
     return templates.TemplateResponse(request, name, context)
 
 

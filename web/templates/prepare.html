@@ -10,6 +10,7 @@
 
 <div class="doc">
   <a href="/jobs/{{ job.id }}" class="linklike">← Back to the listing</a>
+  {% if request.app.state.single_user and drafts_available %}<form method="post" action="/jobs/{{job.id}}/prepare" class="mt-2"><input type="hidden" name="refresh" value="true"><button class="btn btn--sm">Regenerate draft (uses AI)</button></form>{% endif %}
 
   <header class="doc__head mt-2">
     <div style="min-width: 0">
@@ -57,8 +58,8 @@
        true. #}
     {% if has_resume %}
       <p class="note prose" style="margin-bottom: 1rem">
-        Copy each one individually. Nothing here invents experience —
-        these reword lines already on your CV for this specific role.</p>
+        These are AI suggestions. Compare every claim with your original CV
+        and correct anything inaccurate before using them.</p>
     {% else %}
       <p class="note prose" style="margin-bottom: 1rem">
         No CV on file, so there is nothing to rewrite. Upload one on
@@ -96,7 +97,7 @@
 
     {% if t.keywords_to_add %}
       <p class="note mt-2">
-        ATS terms from the JD you genuinely have —
+        Suggested ATS terms — verify each against your experience:
         {{ t.keywords_to_add|join(' · ') }}</p>
     {% endif %}
   </section>
@@ -142,8 +143,8 @@
       {% endif %}
     {% else %}
       <p class="prose muted">
-        No contact found. This step does a web search that fails often,
-        so it is wrapped — the three blocks above never depend on it.</p>
+        No verified contact saved. Check the employer’s official careers
+        page or recruiter profile before sending any message.</p>
     {% endif %}
   </section>
 

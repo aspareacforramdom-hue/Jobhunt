@@ -31,12 +31,15 @@
     </div>
 
     <div class="doc__score">
-      <div class="figure figure--xl">{{ "%.1f"|format(job.score or 0) }}</div>
-      <p class="label" style="margin-top: .5rem">weighted score</p>
+      <div class="figure figure--xl">{% if job.score is not none %}{{ "%.1f"|format(job.score) }}{% else %}Unrated{% endif %}</div>
+      <p class="label" style="margin-top: .5rem">{{ 'preliminary résumé match' if job.evaluation.rating_provider == 'local' else 'weighted score' }}</p>
     </div>
   </header>
 
-  <!-- How the score is made, in this user's own vocabulary -->
+  {% if request.app.state.single_user %}<section class="band"><h2>Confirm before applying</h2><p>{{job.evaluation.salary or 'Salary unverified'}}</p>{% for item in job.evaluation.blockers or [] %}<p>{{item}}</p>{% endfor %}{% for item in job.evaluation.questions or [] %}<p>{{item}}</p>{% endfor %}</section>{% endif %}
+  {% if job.evaluation.evidence_coverage is defined %}<p class="note">Evidence covers {{job.evaluation.evidence_coverage}}% of your weighted priorities. Unverified: {{job.evaluation.unverified_dimensions|join(", ")|replace("_", " ")}}. This is fit, not an interview probability.</p>{% endif %}
+  {% if job.score_stale %}<p class="flash">Earlier assessment: your preferences or scoring have changed. Confirm current suitability before applying.</p>{% endif %}
+  <!-- Score evidence -->
   <section class="band">
     <div class="band__head">
       <h2>How that score is made</h2>
@@ -45,8 +48,7 @@
 
     {% if breakdown %}
       <p class="note" style="margin-bottom: 1rem; max-width: var(--measure)">
-        These dimensions came out of your own intake. Someone else's board
-        is scored on entirely different ones.</p>
+        Fit uses evidenced dimensions only. Unknown salary and working conditions stay unverified. Mandatory qualification gaps cap fit at 5/10.</p>
 
       {% for d in breakdown %}
         <div class="dim {% if d.is_weakest %}dim--weakest{% endif %}">
@@ -111,9 +113,9 @@
     <section class="band">
       <div class="band__head">
         <h2>What employees say</h2>
-        <form method="post" action="/jobs/{{ job.id }}/reviews" class="push">
+        {% if not request.app.state.single_user %}<form method="post" action="/jobs/{{ job.id }}/reviews" class="push">
           <button class="btn btn--sm">Look up reviews</button>
-        </form>
+        </form>{% endif %}
       </div>
       <p class="prose muted">
         {% if company and company.rating %}
@@ -122,8 +124,8 @@
           from the listing. No themed summary has been fetched yet — read
           that number as a starting point, not a verdict.
         {% else %}
-          No review data for {{ job.company }} yet. Needs
-          <code>APIFY_TOKEN</code>.
+          No included review data for {{ job.company }} yet.
+          {% if request.app.state.single_user %}Paid lookups stay disabled to preserve the job-search budget.{% endif %}
         {% endif %}
       </p>
     </section>
@@ -140,15 +142,22 @@
         </form>
       {% endif %}
 
-      {% if application %}
+      {% if application and application.tailored %}
         <a href="/applications/{{ job.id }}" class="btn">
           View prepared application</a>
-      {% else %}
+      {% elif not request.app.state.single_user or drafts_available %}
         <form method="post" action="/jobs/{{ job.id }}/prepare">
           <button class="btn btn--solid">Prepare application</button>
         </form>
       {% endif %}
 
+      {% if job.status not in ['applied', 'interview', 'offer', 'rejected'] %}
+        <form method="post" action="/jobs/{{ job.id }}/status">
+          <input type="hidden" name="status" value="applied">
+          <input type="hidden" name="back" value="/applications">
+          <button class="btn">I've applied</button>
+        </form>
+      {% endif %}
       {# Say it before they click. The whole point of checking links is
          that the user stops finding out at the moment they had decided
          to apply. #}
@@ -158,14 +167,15 @@
 
       <form method="post" action="/jobs/{{ job.id }}/ignore"
             class="push inline" style="gap: .4rem">
-        <input name="reason" placeholder="reason (optional)" size="18">
+        <input name="reason" aria-label="Reason for ignoring" placeholder="reason (optional)" size="18">
         <input type="hidden" name="back" value="/">
         <button class="btn btn--quiet">Ignore</button>
       </form>
     </div>
 
     <p class="note mt-2">
-      Nothing here applies for you. Every draft is yours to send.</p>
+      Nothing here applies for you. Every draft needs your review before sending.</p>
+    {% if request.app.state.single_user and not drafts_available %}<p class="note">Draft generation is unavailable in this no-API setup. Saved drafts remain available. Job scoring uses Codex.</p>{% endif %}
   </section>
 
   {% if job.description %}

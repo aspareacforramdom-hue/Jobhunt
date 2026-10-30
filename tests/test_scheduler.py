@@ -215,7 +215,10 @@ def test_one_users_scoring_failure_does_not_stop_the_others(tmp_path,
 
     assert len(db.list_user_jobs(conn, ids["alice"])) == 1
     assert len(db.list_user_jobs(conn, ids["carol"])) == 1
-    assert db.list_user_jobs(conn, ids["bob"]) == []
+    pending = db.list_user_jobs(conn, ids["bob"])
+    assert len(pending) == 1
+    assert pending[0]["score"] is not None
+    assert pending[0]["evaluation"]["rating_provider"] == "local"
 
     bob_run = db.recent_runs(conn, ids["bob"])[0]
     assert bob_run["status"] == "error"
@@ -313,3 +316,77 @@ def test_a_job_already_scored_for_a_user_is_not_paid_for_twice(tmp_path,
 
     assert scored_batches == [[]], "already-scored job was sent to the LLM again"
     conn.close()
+
+
+@pytest.mark.parametrize("kind", ["manual", "wide", "discover"])
+def test_normal_scan_includes_thousand_boards_and_other_sources(conn, user, tmp_path, monkeypatch, kind):
+    from core import source_registry
+    db.save_profile(conn, user, {"search_terms": ["operations"], "hard_filters": {}})
+    cfg = tmp_path / "sources.yml"
+    cfg.write_text("career_registry:\n  enabled: true\n", encoding="utf-8")
+    scanner = Scanner(sources_path=str(cfg))
+    calls = []
+    monkeypatch.setattr(scheduler, "_merge_discovered_boards", lambda *a: None)
+    monkeypatch.setattr(scheduler.discover, "discover_all", lambda sources, dry=False: (calls.append(("discovery", dry)) or [], []))
+    def batch(connection, limit, pages, progress):
+        calls.append(("boards", limit))
+        progress(1000, 1000, 0)
+        return [], []
+    monkeypatch.setattr(source_registry, "scan_batch", batch)
+    monkeypatch.setattr(scanner, "_score_for_user", lambda *a: calls.append(("scoring", a[-1])))
+    monkeypatch.setattr(scheduler.linkcheck, "sweep", lambda *a, **kw: (0, 0))
+    scanner._scan(conn, kind)
+    assert ("discovery", kind == "discover") in calls
+    assert ("boards", 1000) in calls
+    assert any(c[0] == "scoring" for c in calls)
+    if kind == "wide":
+        assert ("scoring", "manual") in calls
+
+
+def test_saved_rating_never_calls_discovery_or_scrapers(conn, user, tmp_path, monkeypatch):
+    db.save_profile(conn, user, {"search_terms": ["operations"], "hard_filters": {}})
+    job_id = db.upsert_job(conn, {"url": "https://example.com/1", "title": "Operations Manager"})
+    cfg = tmp_path / "sources.yml"
+    cfg.write_text("career_registry:\n  enabled: true\n", encoding="utf-8")
+    scanner = Scanner(sources_path=str(cfg))
+    def forbidden(*a, **kw):
+        pytest.fail("saved-job rating triggered discovery")
+    monkeypatch.setattr(scheduler.discover, "discover_all", forbidden)
+    monkeypatch.setattr(scheduler, "_merge_discovered_boards", forbidden)
+    calls = []
+    monkeypatch.setattr(scanner, "_score_for_user", lambda *a: calls.append(a))
+    scanner._scan(conn, "score")
+    assert len(calls) == 1
+    assert calls[0][3][0]["id"] == job_id
+    assert calls[0][-1] == "score"
+
+
+def test_every_saved_job_gets_local_resume_match_without_ai(conn, user, monkeypatch):
+    profile = {"target": {"role_family": "Operations Manager"},
+               "search_terms": ["Operations Manager"],
+               "resume_text": "Banking operations customer service leadership",
+               "hard_filters": {"locations": ["Bengaluru"]},
+               "weights": {"trajectory_fit": 50, "people_process": 30,
+                           "experience_fit": 20}}
+    db.save_profile(conn, user, profile)
+    rows = [
+        {"url": "https://example.com/1", "title": "Operations Manager",
+         "location": "Bengaluru", "description": "Lead banking operations and customer service. " * 20},
+        {"url": "https://example.com/2", "title": "Operations Manager",
+         "location": "Mumbai", "description": "Lead banking operations. " * 20},
+        {"url": "https://example.com/3", "title": "Software Developer",
+         "location": "Bengaluru", "description": "Develop software. " * 20},
+    ]
+    ids = {row["url"]: db.upsert_job(conn, row) for row in rows}
+    monkeypatch.setattr(scheduler.prefilter, "prefilter", lambda items, p, **kw: [
+        j for j in items if j["url"].endswith("/1")])
+    monkeypatch.setattr(scheduler.score, "score_jobs", lambda *a, **kw:
+                        pytest.fail("discovery spent AI tokens"))
+    Scanner()._score_for_user(conn, db.get_user(conn, user), db.load_profile(conn, user),
+                              rows, ids, "discover")
+    matched = db.list_user_jobs(conn, user, exclude_ignored=False)
+    assert len(matched) == 3
+    assert all(j["score"] is not None for j in matched)
+    assert all(j["evaluation"]["rating_provider"] == "local" for j in matched)
+    assert sum(j["evaluation"]["eligible"] for j in matched) == 1
+    assert db.recent_runs(conn, user)[0]["status"] == "discovery"

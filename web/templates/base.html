@@ -15,17 +15,20 @@
   <div class="masthead__inner">
     <a href="/" class="wordmark">Career<span>&nbsp;/</span>Loop</a>
 
-    <nav class="nav">
+    <nav class="nav" aria-label="Main navigation">
       {% set here = request.url.path %}
+      {% if request.app.state.single_user %}
+      <a href="/">Dashboard</a><a href="/?status=interested">Saved</a><a href="/applications">Applications</a><a href="/ignored">Ignored</a><a href="/#brief">Search brief</a><a href="/sources">Sources</a>
+      {% else %}
       <a href="/" {% if here == '/' %}aria-current="page"{% endif %}>Board</a>
       <a href="/jobs" {% if here.startswith('/jobs') %}aria-current="page"{% endif %}>Jobs</a>
       <a href="/ignored" {% if here == '/ignored' %}aria-current="page"{% endif %}>Ignored</a>
       <a href="/applications" {% if here.startswith('/applications') %}aria-current="page"{% endif %}>Applications</a>
-      <a href="/intake" {% if here == '/intake' %}aria-current="page"{% endif %}>Intake</a>
+      <a href="/intake" {% if here == '/intake' %}aria-current="page"{% endif %}>Intake</a>{% endif %}
     </nav>
 
     <div class="masthead__end">
-      <span id="scan-state" class="scan-state"
+      <span id="scan-state" class="scan-state" role="status" aria-live="polite"
             data-running="{{ 1 if scan and scan.running else 0 }}">
         {%- if scan and scan.running -%}
           Scanning{% if scan.found %} · {{ scan.found }} found{% endif %}
@@ -36,23 +39,24 @@
         {%- endif -%}
       </span>
 
+      {% if request.app.state.single_user %}<form method="post" action="/scan"><input type="hidden" name="mode" value="discover"><button class="btn btn--sm" {% if scan and scan.running %}disabled{% endif %}>Free discovery</button></form>{% endif %}
       <form method="post" action="/scan">
         <button id="scan-btn" class="btn btn--sm"
                 {% if scan and scan.running %}disabled{% endif %}
                 {% if scan and scan.cooldown %}
-                title="Cooling down — {{ (scan.cooldown // 60) }} min left. Clicking anyway is allowed; it is your money."
+                title="Last scan was recent. Saved results and spending limits still apply."
                 {% endif %}>Scan now</button>
       </form>
 
       {% if user %}
         <span class="label">{{ user['username'] }}</span>
-        <a href="/logout" class="linklike">Out</a>
+        {% if not request.app.state.single_user %}<a href="/logout" class="linklike">Out</a>{% endif %}
       {% endif %}
     </div>
   </div>
 </header>
 
-{% if msg %}<p class="flash">{{ msg }}</p>{% endif %}
+{% if msg %}<p class="flash" role="status">{{ msg }}</p>{% endif %}
 
 <main class="shell">
   {% block content %}{% endblock %}
@@ -62,27 +66,44 @@
 // Keep the masthead honest while a scan runs on the background thread.
 (function () {
   var el = document.getElementById('scan-state');
-  var btn = document.getElementById('scan-btn');
+  var buttons = document.querySelectorAll('form[action="/scan"] button, form[action="/sources/scan"] button, form[action="/score"] button');
   if (!el) return;
+  var wasRunning = el.dataset.running === '1';
+  var lastFinished = {{ (scan.last_finished if scan else none)|tojson }};
+  var failures = 0;
 
   function tick() {
-    fetch('/scan/status').then(function (r) { return r.json(); })
+    fetch('/scan/status', {cache: 'no-store'}).then(function (r) {
+      if (!r.ok) throw new Error('Status unavailable');
+      return r.json();
+    })
       .then(function (s) {
+        failures = 0;
         el.dataset.running = s.running ? '1' : '0';
-        btn.disabled = !!s.running;
+        buttons.forEach(function (button) { button.disabled = !!s.running; });
+        var completed = !s.running && (wasRunning || (s.last_finished && s.last_finished !== lastFinished));
+        wasRunning = !!s.running;
+        lastFinished = s.last_finished;
         if (s.running) {
           el.textContent = 'Scanning · ' + s.phase +
             (s.found ? ' · ' + s.found + ' found' : '');
         } else if (s.error) {
-          el.textContent = 'Last scan failed';
+          el.textContent = 'Search needs attention: ' + s.error;
         } else if (s.last_finished) {
           el.textContent = 'Last scan · ' + s.last_found + ' found';
         } else {
           el.textContent = 'No scan yet';
         }
-      }).catch(function () {});
+        // Refresh result pages after a completed scan, preserving filters.
+        if (completed && (location.pathname === '/' || location.pathname === '/sources')) {
+          location.reload();
+        }
+      }).catch(function () {
+        failures += 1;
+        if (failures >= 2) el.textContent = 'Connection lost. Reopen the app, then refresh.';
+      });
   }
-  setInterval(tick, 15000);
+  setInterval(tick, 5000);
 })();
 
 // Copy buttons on the prepare screen.
@@ -91,11 +112,15 @@ document.addEventListener('click', function (e) {
   if (!btn) return;
   var src = document.getElementById(btn.dataset.copy);
   if (!src) return;
+  if (!navigator.clipboard) {
+    btn.textContent = 'Select text to copy';
+    return;
+  }
   navigator.clipboard.writeText(src.innerText.trim()).then(function () {
     var was = btn.textContent;
     btn.textContent = 'Copied';
     setTimeout(function () { btn.textContent = was; }, 1400);
-  });
+  }).catch(function () { btn.textContent = 'Select text to copy'; });
 });
 </script>
 </body>

@@ -62,7 +62,7 @@ def _send(text, chat_id=None, dry=False):
     try:
         urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=20)
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - notification failure is non-fatal
         print(f"[telegram] failed: {e}")
         return False
 
@@ -76,8 +76,7 @@ def send_scan_summary(user, jobs, portal_url, dry=False, top_n=3):
     warning — never delivered to whatever TELEGRAM_CHAT_ID happens to be
     in the environment.
     """
-    chat_id = user["telegram_chat_id"] if "telegram_chat_id" in user.keys() \
-        else None
+    chat_id = dict(user).get("telegram_chat_id")
     username = user["username"]
 
     if not jobs:

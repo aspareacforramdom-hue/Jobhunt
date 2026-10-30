@@ -139,6 +139,7 @@ def discover_all(sources, dry=False):
     a thin day in the market.
     """
     rows, notes = [], []
+    firecrawl.take_notes()
 
     ats = sources.get("ats_targets", {})
     print("→ Tier 1: direct ATS boards (public JSON, never breaks)...")
@@ -184,6 +185,7 @@ def discover_all(sources, dry=False):
                 rows += firecrawl.search_jobs(fc_cfg, terms, locs)
             rows += firecrawl.scrape_career_pages(fc_cfg)
             notes.append(f"Firecrawl: {len(rows) - before} listings")
+            notes.extend(firecrawl.take_notes())
         else:
             notes.append("FIRECRAWL_API_KEY not set — open-web search "
                          "and career pages skipped")
@@ -208,7 +210,6 @@ def discover_all(sources, dry=False):
                 print(f"→ Tier 2.7: LinkedIn via Apify "
                       f"({'first deep run' if seeding else 'daily'}, "
                       f"{len(li_terms)} keywords, ~${cost:.2f})...")
-                before = len(rows)
                 before = len(rows)
                 rows += from_linkedin(li_cfg, li_terms, locs,
                                       sources.get("linkedin_filters"), seeding)
@@ -236,11 +237,16 @@ def discover_all(sources, dry=False):
             # Whatever LinkedIn already took comes off this tier's
             # allowance, so the two together respect one number.
             local = dict(apify_cfg)
+            exhausted = False
             if local.get("max_spend_per_scan_usd"):
                 local["max_spend_per_scan_usd"] = max(
                     0.0, float(local["max_spend_per_scan_usd"]) - spent)
-            paid_terms, trim_note = affordable_terms(
-                local, apify_cfg.get("search_terms") or terms, seeded)
+                exhausted = local["max_spend_per_scan_usd"] <= 0
+            if exhausted:
+                paid_terms, trim_note = [], "Naukri skipped — shared paid-source budget exhausted"
+            else:
+                paid_terms, trim_note = affordable_terms(
+                    local, apify_cfg.get("search_terms") or terms, seeded)
             if trim_note:
                 print(f"  [apify] {trim_note}")
                 notes.append(trim_note)
@@ -257,8 +263,11 @@ def discover_all(sources, dry=False):
                 rows += from_apify(apify_cfg, paid_terms, locs,
                                    sources.get("naukri_filters"))
                 naukri_ok = len(rows) > before
-                notes.append(f"Naukri via Apify: {len(rows) - before} "
-                             f"listings, ~${estimate:.2f}")
+                if apify_cfg.get("budget_guard"):
+                    notes.extend(apify_cfg.get("_budget_notes", []))
+                else:
+                    notes.append(f"Naukri via Apify: {len(rows) - before} "
+                                 f"listings, ~${estimate:.2f}")
         else:
             notes.append("APIFY_TOKEN not set — Naukri skipped, "
                          "running on free sources only")

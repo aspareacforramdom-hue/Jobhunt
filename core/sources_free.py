@@ -11,10 +11,10 @@ resolves and the fan-out can still be monkeypatched there.
 """
 
 import json
+import math
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
-
 
 
 def _now():
@@ -48,8 +48,7 @@ def _clean(value):
     if value is None:
         return None
     if isinstance(value, float):
-        # NaN is the only float that is not equal to itself.
-        return None if value != value else str(value)
+        return None if math.isnan(value) else str(value)
     return str(value)
 
 
@@ -80,17 +79,20 @@ def from_jobspy(cfg):
     if budget and len(pairs) > budget:
         print(f"  [jobspy] {len(pairs)} term/location searches capped at "
               f"{budget}")
-        pairs = pairs[:budget]
+        offset = int(cfg.get("search_offset", 0)) % len(pairs)
+        pairs = (pairs + pairs)[offset:offset + budget]
 
     for term, loc in pairs:
         try:
             df = scrape_jobs(
                 site_name=cfg.get("sites") or ["linkedin", "indeed"],
                 search_term=term,
-                location=loc,
+                location="India" if loc and "remote" in loc.lower() else loc,
+                is_remote=bool(loc and "remote" in loc.lower()),
                 results_wanted=int(cfg.get("results_wanted", 40)),
                 hours_old=int(cfg.get("hours_old", 48)),
                 country_indeed=cfg.get("country_indeed", "India"),
+                linkedin_fetch_description=bool(cfg.get("fetch_descriptions", True)),
             )
             for _, r in df.iterrows():
                 rows.append({
@@ -98,7 +100,7 @@ def from_jobspy(cfg):
                     "company": _clean(r.get("company")),
                     "location": _clean(r.get("location")),
                     "url": _clean(r.get("job_url")),
-                    "description": (_clean(r.get("description")) or "")[:4000],
+                    "description": (_clean(r.get("description")) or "")[:18000],
                     "source": _clean(r.get("site")),
                     "skills": _clean(r.get("skills")),
                     "experience_range": _clean(r.get("experience_range")),

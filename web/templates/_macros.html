@@ -29,7 +29,7 @@
 {% macro entry(job, back="/", delay=0) %}
 <article class="entry" style="animation-delay: {{ delay }}ms">
   <div class="entry__top">
-    <span class="entry__score">{{ "%.1f"|format(job.score or 0) }}</span>
+    <span class="entry__score">{% if job.score is not none %}{{ "%.1f"|format(job.score) }}{% else %}Unrated{% endif %}</span>
     <a href="/jobs/{{ job.id }}" class="entry__title">{{ job.title }}</a>
     {# The mark belongs with the role name, not down among the metadata —
        and keeping it out of the meta line stops that line wrapping onto

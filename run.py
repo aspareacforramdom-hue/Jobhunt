@@ -175,7 +175,10 @@ def cmd_serve(args):
     host = args[args.index("--host") + 1] if "--host" in args else "127.0.0.1"
     port = int(args[args.index("--port") + 1] if "--port" in args else 8000)
 
-    app = create_app(boot_scan="--no-scan" not in args, dry="--dry" in args)
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("Personal dashboard must bind to localhost")
+    app = create_app(boot_scan="--scan-on-start" in args and "--no-scan" not in args,
+                     dry="--dry" in args)
     print(f"→ Career Loop portal on http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
@@ -496,7 +499,7 @@ def cmd_doctor(args):
               "every scan\n  and can never return a listing.")
 
     print("\nKeys and models")
-    for name, why in (("ANTHROPIC_API_KEY", "scoring, tailoring, intake"),
+    for name, why in (("OPENAI_API_KEY", "optional AI drafting and intake"),
                       ("APIFY_TOKEN", "Naukri and LinkedIn"),
                       ("FIRECRAWL_API_KEY", "open-web career pages")):
         print(f"  {'set    ' if os.environ.get(name) else 'MISSING'} "
@@ -573,26 +576,75 @@ def cmd_form(args):
     print("script.google.com and press Run.")
 
 
-COMMANDS = {
-    "intake": cmd_intake,
-    "calibrate": cmd_calibrate,
-    "scan": cmd_scan,
-    "log": cmd_log,
-    "review": cmd_review,
-    "seed-users": cmd_seed_users,
-    "warm-up": cmd_warm_up,
-    "discover-companies": cmd_discover_companies,
-    "set-telegram": cmd_set_telegram,
-    "publish": cmd_publish,
-    "migrate": cmd_migrate,
-    "doctor": cmd_doctor,
-    "form": cmd_form,
-    "check-links": cmd_check_links,
-    "serve": cmd_serve,
-}
+def cmd_personal_scan(args):
+    from core import personal, scheduler
+    conn = db.connect()
+    try:
+        personal.bootstrap(conn)
+    finally:
+        conn.close()
+    scanner = scheduler.Scanner(dry="--dry" in args, sources_path="config/personal_sources.yml")
+    scanner._run("discover" if "--discover-only" in args else "manual")
+    if scanner.status().get("error"):
+        raise SystemExit(1)
+
+
+def cmd_import_jobs(args):
+    """Import connector-exported public listings into the private search pool."""
+    import json
+    from pathlib import Path
+    from urllib.parse import urlsplit
+    from core import personal
+    if len(args) != 1:
+        raise ValueError("Usage: run.py import-jobs listings.json")
+    path = Path(args[0])
+    if path.stat().st_size > 5_000_000:
+        raise ValueError("Listing file exceeds 5 MB")
+    jobs = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(jobs, list) or len(jobs) > 500:
+        raise ValueError("Expected an array of at most 500 listings")
+    for job in jobs:
+        if not isinstance(job, dict) or not all(isinstance(job.get(k), str) and job[k].strip() for k in ("title", "company", "url")):
+            raise ValueError("Each listing needs title, company and URL strings")
+        if urlsplit(job["url"]).scheme not in {"http", "https"}:
+            raise ValueError("Only public HTTP listing links are supported")
+    conn = db.connect()
+    try:
+        personal.bootstrap(conn)
+        for job in jobs:
+            db.upsert_job(conn, dict(job, source=job.get("source") or "connector"))
+        conn.commit()
+    finally:
+        conn.close()
+    print(f"Imported {len(jobs)} listings. Run scan to analyse them.")
+
+
+def cmd_sources(args):
+    from core import source_registry, personal
+    conn = db.connect()
+    try:
+        personal.bootstrap(conn)
+        if "--import" in args:
+            count = source_registry.import_catalog(conn)
+            print(f"Imported {count} candidate boards. Verification is pending.")
+        if "--scan" in args:
+            limit = int(args[args.index("--scan") + 1])
+            jobs, notes = source_registry.scan_batch(conn, limit=limit, persist=True)
+            for job in jobs:
+                db.upsert_job(conn, job)
+            conn.commit()
+            print("\n".join(notes))
+        print(source_registry.inventory(conn)["counts"])
+    finally:
+        conn.close()
+
+
+COMMANDS = {"sources": cmd_sources, "serve": cmd_serve, "scan": cmd_personal_scan,
+            "import-jobs": cmd_import_jobs,
+            "warm-up": cmd_warm_up, "check-links": cmd_check_links}
 
 if __name__ == "__main__":
-    cmd = sys.argv[1] if len(sys.argv) > 1 else "scan"
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "serve"
     if cmd not in COMMANDS:
         print(__doc__)
         sys.exit(1)

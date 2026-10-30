@@ -12,7 +12,7 @@ You log outcomes. The system re-weights.
 import json
 import os
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core import dimensions, intake
 from core.llm import call_llm
@@ -32,7 +32,7 @@ def log(url, status, note=""):
         "url": url,
         "status": status,
         "note": note,
-        "at": datetime.now().isoformat(),
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     })
     _save(data)
     print(f"→ logged: {status}")

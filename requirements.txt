@@ -32,5 +32,14 @@ pandas>=2.0                  # required by python-jobspy
 
 # --- tests ------------------------------------------------------------
 pytest>=8.0
-playwright>=1.40             # tests/test_e2e_browser.py only.
+httpx>=0.27                 # FastAPI/Starlette TestClient
+playwright>=1.40             # browser fallback and Chromium tests.
                              # After installing: playwright install chromium
+
+# JobSpy currently pins NumPy 1.26.3; SciPy 1.17 requires newer NumPy.
+scipy>=1.13,<1.16
+requests>=2.31
+beautifulsoup4>=4.12
+scrapling[fetchers]==0.4.15  # free HTML career pages and shortlisted descriptions
+
+trafilatura==2.0.0          # local description cleanup; no API/AI calls

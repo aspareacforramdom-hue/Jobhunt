@@ -1,4 +1,4 @@
-# Claude Code Build: Career Loop Portal
+# Codex Build: Career Loop Portal
 
 **Deadline: Tuesday. This is a real deadline, not aspirational.**
 Read the "If you fall behind" section before you start — knowing what
@@ -23,7 +23,7 @@ Do not rewrite working code. Extend it.
 ## What exists
 
 ```
-core/llm.py          shared Anthropic caller
+core/llm.py          shared OpenAI caller
 core/intake.py       CV parse + adaptive Q loop + constraint compiler
 core/calibrate.py    market reality check (web search)
 core/discover.py     JobSpy + Greenhouse/Lever fetchers

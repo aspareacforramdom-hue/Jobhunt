@@ -42,7 +42,7 @@ MAX_AGE_DAYS = 30
 # the model ever sees them, and 60 AmbitionBox reviews is roughly double
 # that — so half of every company's reviews were bought and discarded
 # unread. At $0.009 a review that was ~$0.27 wasted per company.
-REVIEWS_PER_COMPANY = int(os.environ.get("CAREERLOOP_REVIEWS_PER_COMPANY", 20))
+REVIEWS_PER_COMPANY = int(os.environ.get("CAREERLOOP_REVIEWS_PER_COMPANY", "20"))
 RATINGS_ACTOR = "thirdwatch/ambitionbox-scraper"
 REVIEWS_ACTOR = "getdataforme/ambitionbox-reviews-scraper"
 APIFY_RUN = ("https://api.apify.com/v2/acts/{actor}/"
@@ -250,7 +250,7 @@ def enrich(conn, company, sector=None, force=False, dry=False):
             sector_median_rating=(summary or {}).get("sector_median"))
         return db.get_company(conn, company)
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - optional enrichment stays non-fatal
         print(f"  [reviews] {company}: {e}")
         return db.get_company(conn, company)
 

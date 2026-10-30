@@ -270,4 +270,46 @@ MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS idx_user_jobs_new
         ON user_jobs (status, job_id) WHERE status = 'new';
     """,
+    # 13 — persist enrichment work and rotate link checks across the pool.
+    """
+    ALTER TABLE jobs ADD COLUMN needs_enrichment INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE jobs ADD COLUMN link_checked_at TEXT;
+    UPDATE jobs SET needs_enrichment = 1 WHERE source = 'firecrawl';
+    """,
+    # 14 — one-candidate brief, provenance and score revision.
+    """
+    ALTER TABLE profiles ADD COLUMN extra_json TEXT;
+    ALTER TABLE jobs ADD COLUMN metadata_json TEXT;
+    ALTER TABLE user_jobs ADD COLUMN evaluation_json TEXT;
+    ALTER TABLE user_jobs ADD COLUMN profile_revision TEXT;
+    CREATE TABLE outcome_events (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      status TEXT NOT NULL,
+      note TEXT,
+      happened_at TEXT NOT NULL
+    );
+    """,
+    # 15 — persistent, independently observable career-page coverage.
+    """
+    CREATE TABLE career_sources (
+      id INTEGER PRIMARY KEY,
+      company TEXT NOT NULL,
+      url TEXT NOT NULL UNIQUE,
+      platform TEXT NOT NULL,
+      locator TEXT NOT NULL,
+      provenance TEXT NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      state TEXT NOT NULL DEFAULT 'queued',
+      last_checked TEXT,
+      next_check TEXT,
+      failures INTEGER NOT NULL DEFAULT 0,
+      jobs_seen INTEGER NOT NULL DEFAULT 0,
+      relevant_seen INTEGER NOT NULL DEFAULT 0,
+      detail TEXT
+    );
+    CREATE INDEX idx_career_sources_due ON career_sources(enabled, next_check, priority);
+    """,
 ]

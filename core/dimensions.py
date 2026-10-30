@@ -175,8 +175,8 @@ def _rescale(weights, notes):
         notes.append("all non-experience weights were zero — reset to default")
 
     scaled = {d: v / total * pool for d, v in others.items()}
-    out = {d: int(round(v)) for d, v in scaled.items()}
-    out["experience_fit"] = int(round(fixed))
+    out = {d: round(v) for d, v in scaled.items()}
+    out["experience_fit"] = round(fixed)
 
     # Rounding leaves a remainder of a point or two. Give it to the
     # heaviest dimension so the sum is exactly 100.

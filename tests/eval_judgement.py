@@ -19,7 +19,7 @@ running.
 
     py -3.11 tests/eval_judgement.py
 
-Last run, against claude-sonnet-4-6: 8 of 8 assertions passed.
+Last run, against gpt-6-sol: 8 of 8 assertions passed.
     stretch 8.7 · overreach 6.7 · lateral 6.4
     wrong_field 3.4 · backwards 3.1 · junk 1.0
 """

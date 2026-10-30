@@ -110,7 +110,7 @@ def _http_error(code, body=b'{"error":{"message":"nope"}}'):
 
 def test_a_rate_limit_is_retried_not_lost(monkeypatch):
     """One 429 used to drop a whole batch of eight listings, silently."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     monkeypatch.setattr(llm.time, "sleep", lambda s: None)
     attempts = []
 
@@ -118,7 +118,7 @@ def test_a_rate_limit_is_retried_not_lost(monkeypatch):
         attempts.append(1)
         if len(attempts) < 3:
             raise _http_error(429)
-        return _Resp({"content": [{"type": "text", "text": "ok"}],
+        return _Resp({"output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}],
                       "usage": {"input_tokens": 1}})
 
     monkeypatch.setattr(llm.urllib.request, "urlopen", fake_open)
@@ -129,7 +129,7 @@ def test_a_rate_limit_is_retried_not_lost(monkeypatch):
 def test_a_bad_request_fails_immediately_with_the_reason(monkeypatch):
     """400 is a bug in the request. Retrying spends the money twice, and
     `HTTP Error 400: Bad Request` names none of the twelve causes."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     calls = []
 
     def fake_open(req, timeout=None):
@@ -144,18 +144,18 @@ def test_a_bad_request_fails_immediately_with_the_reason(monkeypatch):
 
 
 def test_an_empty_reply_says_so_instead_of_a_json_error(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     monkeypatch.setattr(
         llm.urllib.request, "urlopen",
-        lambda req, timeout=None: _Resp({"content": [], "usage": {},
-                                         "stop_reason": "refusal"}))
+        lambda req, timeout=None: _Resp({"output": [], "usage": {},
+                                         "status": "incomplete"}))
     with pytest.raises(llm.LLMError) as err:
         llm.call_llm_usage("s", "p", as_json=True)
     assert "no text" in str(err.value)
 
 
 def test_a_missing_key_is_reported_before_any_request(monkeypatch):
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(llm.LLMError):
         llm.call_llm_usage("s", "p")
 
@@ -293,7 +293,7 @@ def test_one_users_score_never_rides_along_on_anothers_listing(tmp_path,
 
     def fake_score(jobs, prof):
         # Alice's batch succeeds; Bob's returns nothing, as a failed
-        # batch does. Bob must end up with no row, not Alice's row.
+        # batch does. Bob retains an unrated lead, without Alice's opinion.
         who = len(scored_for)
         scored_for[who] = jobs
         if who == 0:
@@ -317,7 +317,12 @@ def test_one_users_score_never_rides_along_on_anothers_listing(tmp_path,
         scanner._score_for_user(conn, user, profile, fresh, job_ids, "test")
 
     assert db.list_user_jobs(conn, a)[0]["verdict"] == "alice only"
-    assert db.list_user_jobs(conn, b) == []
+    pending = db.list_user_jobs(conn, b)
+    assert len(pending) == 1
+    assert pending[0]["score"] is not None
+    assert pending[0]["evaluation"]["rating_provider"] == "local"
+    assert pending[0]["angle"] is None
+    assert pending[0]["verdict"] != "alice only"
     assert "score" not in fresh[0], "the shared scrape was mutated"
     conn.close()
 
@@ -406,7 +411,7 @@ def test_a_scan_with_no_api_key_is_an_error_not_a_quiet_market(tmp_path,
                   "description": "d", "found_at": db.now()}]
         job_ids = {"https://x/1": db.upsert_job(conn, fresh[0])}
 
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.setattr(scheduler.firecrawl, "enrich_descriptions",
                             lambda jobs, cfg, dry=False: jobs)
 
@@ -416,7 +421,7 @@ def test_a_scan_with_no_api_key_is_an_error_not_a_quiet_market(tmp_path,
 
         run = db.recent_runs(conn, uid)[0]
         assert run["status"] == "error"
-        assert "ANTHROPIC_API_KEY" in run["error_text"]
+        assert "OPENAI_API_KEY" in run["error_text"]
         assert db.last_successful_run(conn) is None
         assert scanner.cooldown_remaining(conn) == 0
     finally:

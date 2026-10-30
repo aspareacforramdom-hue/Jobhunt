@@ -95,8 +95,17 @@ def attach_search_terms(profile, calibration, limit=8):
         target = profile.get("target", {}) or {}
         terms = [t for t in ([target.get("role_family")]
                              + list(target.get("alt_titles") or [])) if t]
-
-    profile["search_terms"] = terms[:limit]
+    leverage = profile.get("leverage_target") or {}
+    secondary = [t for t in [leverage.get("role_family")]
+                 + list(leverage.get("alt_titles") or []) if t]
+    # Interleave so a long ideal-target list cannot exhaust the cap before
+    # the second target gets even one search term.
+    combined = []
+    for i in range(max(len(terms), len(secondary))):
+        for group in (terms, secondary):
+            if i < len(group) and group[i] not in combined:
+                combined.append(group[i])
+    profile["search_terms"] = combined[:limit]
     return profile
 
 

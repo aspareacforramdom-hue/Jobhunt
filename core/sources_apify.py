@@ -12,6 +12,7 @@ term_cost, estimate_cost and affordable_terms decide what is affordable
 BEFORE any money is spent.
 """
 
+import html
 import json
 import os
 import re
@@ -83,18 +84,28 @@ def _from_naukri_item(item):
         str(l.get("label") or l.get("name") or l) if isinstance(l, dict)
         else str(l) for l in locations[:3]) or None
 
-    description = _TAG.sub(" ", job.get("description") or "")
+    description = html.unescape(_TAG.sub(" ", job.get("description") or ""))
     description = " ".join(description.split())
     if not description:
         description = job.get("shortDescription") or ""
 
-    ab = job.get("ambitionBoxData") or {}
+    experience = job.get("experienceText")
+    if experience:
+        description += "\nRequired experience: " + str(experience)
+    salary = job.get("salaryDetail") or {}
+    salary_text = salary.get("salaryText") or salary.get("label") or job.get("salaryDescription")
+    ab = job.get("ambitionBoxData") or (item.get("ambitionBoxDetails") or {}).get("companyInfo") or {}
     return {
         "title": title,
         "company": company,
         "location": location,
         "url": url,
-        "description": description[:4000],
+        "description": description[:18000],
+        "salary_text": salary_text if isinstance(salary_text, str) else None,
+        "posted_at": job.get("createdDate"),
+        "applicants": job.get("applyCount"),
+        "source_note": "Naukri listing; confirm current vacancy and salary with employer",
+        "source_url": url,
         "source": "naukri",
         # This actor attaches AmbitionBox ratings to the listing, which
         # is why it is preferred — Naukri and the review data in one
@@ -254,6 +265,8 @@ def _naukri_payload(cfg, term, locations, filters, backfilled=()):
 
 def from_apify(cfg, search_terms, locations, filters=None):
     """Naukri via a maintained actor. Returns [] and says why on failure."""
+    if cfg.get("budget_guard"):
+        return _budgeted_naukri(cfg, search_terms, locations)
     token = os.environ.get("APIFY_TOKEN")
     if not token:
         return []
@@ -310,6 +323,40 @@ def from_apify(cfg, search_terms, locations, filters=None):
                 rows.append(row)
 
     print(f"  [apify] {len(rows)} listings from Naukri")
+    return rows
+
+
+def _budgeted_naukri(cfg, terms, locations):
+    from core import apify_budget
+    cfg["_seeded_terms"] = []
+    cfg["_budget_notes"] = []
+    rows = []
+    for term in terms[:1]:
+        payload = _naukri_payload(cfg, term, locations, {})
+        payload["experience"] = str(cfg.get("experience", "5"))
+        # Paid nationwide remote searches returned mostly out-of-area jobs.
+        # Keep the candidate's city filter when both city and remote work
+        # are acceptable; free sources still discover remote openings.
+        # A remote-only preference must search nationwide.
+        if locations and all("remote" in str(loc).lower() for loc in locations):
+            payload.pop("cities", None)
+            payload["workMode"] = ["remote"]
+        try:
+            items, note = apify_budget.run(payload)
+            cfg["_seeded_terms"].append(term)
+            seen = set()
+            for item in items:
+                row = _from_naukri_item(item)
+                if row and row["url"] not in seen:
+                    seen.add(row["url"])
+                    rows.append(row)
+            full = sum(len(row.get("description") or "") >= 400 for row in rows)
+            note += f"; {len(rows)} unique jobs, {full} descriptions over 400 characters"
+        except (apify_budget.BudgetError, KeyError, TypeError, ValueError) as error:
+            # Never expose HTTP bodies, authorization headers or raw exceptions.
+            note = str(error) if isinstance(error, apify_budget.BudgetError) else "Apify metadata invalid; paid search stopped"
+        cfg["_budget_notes"].append(note)
+        print("  [apify] " + note)
     return rows
 
 

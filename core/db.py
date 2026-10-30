@@ -26,7 +26,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from core import schema
 
-DB_PATH = os.environ.get("CAREERLOOP_DB", "data/careerloop.db")
+DB_PATH = os.environ.get("CAREERLOOP_DB", "data/shivani/careerloop.db")
 
 # India has no DST, so a fixed offset is exact and needs no tz database.
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -113,25 +113,48 @@ def init_db(conn):
         row = conn.execute(
             "SELECT MAX(version) v FROM schema_version").fetchone()
         current = row["v"] or 0
-    except sqlite3.OperationalError:
-        conn.execute("CREATE TABLE IF NOT EXISTS schema_version "
-                     "(version INTEGER NOT NULL)")
+    except sqlite3.OperationalError as exc:
+        if "no such table" not in str(exc):
+            raise
         current = 0
 
     if current >= len(MIGRATIONS):
         return conn
 
-    for i, sql in enumerate(MIGRATIONS, start=1):
-        if i <= current:
-            continue
-        conn.executescript(sql)
-        conn.execute("INSERT INTO schema_version (version) VALUES (?)", (i,))
-    conn.commit()
+    # Serialize first-start/upgrade callers and record each schema change
+    # in the same transaction as its version. executescript implicitly
+    # commits, leaving half-applied ALTERs behind after a crash or error.
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("CREATE TABLE IF NOT EXISTS schema_version "
+                     "(version INTEGER NOT NULL)")
+        current = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] or 0
+        for i, sql in enumerate(MIGRATIONS, start=1):
+            if i <= current:
+                continue
+            statement = ""
+            for char in sql:
+                statement += char
+                if char == ";" and sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ""
+            if statement.strip():
+                conn.execute(statement)
+            conn.execute("INSERT INTO schema_version (version) VALUES (?)", (i,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return conn
 
 
 def connect(path=None):
-    return init_db(get_conn(path))
+    conn = get_conn(path)
+    try:
+        return init_db(conn)
+    except Exception:
+        conn.close()
+        raise
 
 
 # ------------------------------------------------------------
@@ -175,8 +198,8 @@ def save_profile(conn, user_id, profile):
         "INSERT INTO profiles (user_id, target_json, hard_filters_json, "
         "weights_json, dimension_definitions_json, angles_json, "
         "search_terms_json, dropped_json, updated_at, resume_text, "
-        "leverage_target_json, track_weighting, inference_note) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+        "leverage_target_json, track_weighting, inference_note, extra_json) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(user_id) DO UPDATE SET "
         "target_json=excluded.target_json, "
         "hard_filters_json=excluded.hard_filters_json, "
@@ -191,7 +214,7 @@ def save_profile(conn, user_id, profile):
         "resume_text=COALESCE(excluded.resume_text, profiles.resume_text), "
         "leverage_target_json=excluded.leverage_target_json, "
         "track_weighting=excluded.track_weighting, "
-        "inference_note=excluded.inference_note",
+        "inference_note=excluded.inference_note, extra_json=excluded.extra_json",
         (user_id, _j(profile.get("target", {})),
          _j(profile.get("hard_filters", {})), _j(profile.get("weights", {})),
          _j(profile.get("dimension_definitions", {})),
@@ -200,7 +223,9 @@ def save_profile(conn, user_id, profile):
          (profile.get("resume_text") or None),
          _j(profile.get("leverage_target", {})),
          profile.get("track_weighting"),
-         profile.get("inference_note")))
+         profile.get("inference_note"), _j({k: profile[k] for k in (
+             "candidate", "evidence", "uncertainties", "preferences",
+             "search_strategy", "source_documents") if k in profile})))
     conn.commit()
     return profile
 
@@ -211,6 +236,7 @@ def load_profile(conn, user_id):
     if not r:
         return None
     return {
+        **(_unj(r["extra_json"], {}) or {}),
         "target": _unj(r["target_json"], {}),
         "hard_filters": _unj(r["hard_filters_json"], {}),
         "weights": _unj(r["weights_json"], {}),
@@ -265,8 +291,11 @@ def normalize_url(url):
                        if k.lower() not in _TRACKING_PARAMS])
     path = parts.path.rstrip("/") or "/"
 
+    # Career pages without per-role links use a reserved fragment as the
+    # listing identity. Ordinary navigation/tracking fragments still drop.
+    fragment = parts.fragment if parts.fragment.startswith("careerloop-job=") else ""
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(),
-                       path, query, ""))          # fragment always dropped
+                       path, query, fragment))
 
 
 def upsert_job(conn, job):
@@ -285,18 +314,30 @@ def upsert_job(conn, job):
     # cheap-looking query was the cheap one. Left as it is, deliberately.
     conn.execute(
         "INSERT INTO jobs (url, title, company, location, description, "
-        "source, found_at) VALUES (?,?,?,?,?,?,?) "
+        "source, found_at, last_seen_at, needs_enrichment, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?) "
         "ON CONFLICT(url) DO UPDATE SET "
         "title=COALESCE(excluded.title, jobs.title), "
         "company=COALESCE(excluded.company, jobs.company), "
         "location=COALESCE(excluded.location, jobs.location), "
-        "description=COALESCE(NULLIF(excluded.description,''), "
-        "jobs.description)",
+        "description=CASE WHEN length(COALESCE(excluded.description,'')) >= "
+        "length(COALESCE(jobs.description,'')) THEN excluded.description ELSE jobs.description END, "
+        "needs_enrichment=CASE WHEN "
+        "max(length(COALESCE(excluded.description,'')), length(COALESCE(jobs.description,''))) >= 350 "
+        "THEN 0 ELSE excluded.needs_enrichment END, "
+        "metadata_json=json_patch(COALESCE(jobs.metadata_json,'{}'), COALESCE(excluded.metadata_json,'{}'))",
         (url, job.get("title"), job.get("company"), job.get("location"),
          job.get("description"), job.get("source"),
-         job.get("found_at") or now()))
+         job.get("found_at") or now(), now(),
+         int(bool(job.get("needs_enrichment"))),
+         _j({k: job[k] for k in JOB_METADATA if k in job})
+         if any(k in job for k in JOB_METADATA) else None))
     row = conn.execute("SELECT id FROM jobs WHERE url = ?", (url,)).fetchone()
     return row["id"] if row else None
+
+
+JOB_METADATA = ("salary_min_lpa", "salary_max_lpa", "salary_text", "work_mode",
+                "verified_at", "verification", "posted_at", "valid_through",
+                "applicants", "easy_apply", "source_url", "source_note")
 
 
 def get_job(conn, job_id):
@@ -323,21 +364,22 @@ def upsert_user_job(conn, user_id, job_id, scored, commit=True):
     conn.execute(
         "INSERT INTO user_jobs (user_id, job_id, score, verdict, angle, "
         "risk, stretch, score_breakdown_json, evidence, track, status, "
-        "updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,'new',?) "
+        "updated_at, evaluation_json, profile_revision) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,'new',?,?,?) "
         "ON CONFLICT(user_id, job_id) DO UPDATE SET "
         "score=excluded.score, verdict=excluded.verdict, "
         "angle=excluded.angle, risk=excluded.risk, "
         "stretch=excluded.stretch, "
         "score_breakdown_json=excluded.score_breakdown_json, "
         "evidence=excluded.evidence, track=excluded.track, "
-        "updated_at=excluded.updated_at",
+        "updated_at=excluded.updated_at, evaluation_json=excluded.evaluation_json, "
+        "profile_revision=excluded.profile_revision",
         (user_id, job_id, scored.get("score"), scored.get("verdict"),
          scored.get("angle"), scored.get("risk"),
          int(bool(scored.get("stretch"))),
          _j(scored.get("score_breakdown", {})),
          scored.get("evidence") or None, scored.get("track") or None,
-         now()))
+         now(), _j(scored.get("evaluation") or {}), scored.get("profile_revision")))
     if commit:
         conn.commit()
 
@@ -348,13 +390,14 @@ def upsert_user_job(conn, user_id, job_id, scored, commit=True):
 # 96% of the payload. They are named explicitly now, and only the detail
 # page — which actually shows the text — asks for it.
 _JOB_COLS = ("j.id, j.url, j.title, j.company, j.location, j.source, "
-             "j.found_at, j.closed_at")
+             "j.found_at, j.closed_at, j.metadata_json, j.link_checked_at")
 
 _JOIN_TAIL = """
          uj.score, uj.verdict, uj.angle, uj.risk, uj.stretch,
          uj.score_breakdown_json, uj.evidence, uj.track, uj.status,
          uj.ignored_reason,
          uj.ignored_at, uj.updated_at,
+         uj.evaluation_json, uj.profile_revision,
          c.rating AS company_rating, c.review_count AS company_review_count,
          c.review_summary_json
     FROM user_jobs uj
@@ -369,6 +412,8 @@ _JOIN_FULL = f"SELECT {_JOB_COLS}, j.description, {_JOIN_TAIL}"
 
 def _row(r):
     d = dict(r)
+    d.update(_unj(d.pop("metadata_json", None), {}) or {})
+    d["evaluation"] = _unj(d.pop("evaluation_json", None), {}) or {}
     d["score_breakdown"] = _unj(d.pop("score_breakdown_json", None), {})
     d["review_summary"] = _unj(d.pop("review_summary_json", None), None)
     d["stretch"] = bool(d.get("stretch"))
@@ -401,14 +446,17 @@ def scores_for(conn, user_id, exclude_ignored=True):
 def list_user_jobs(conn, user_id, *, statuses=None, exclude_ignored=True,
                    min_score=None, company=None, source=None, since=None,
                    search=None, order="score", limit=None,
-                   include_closed=False, track=None):
-    sql, params = _JOIN, [user_id]
+                   include_closed=False, track=None, include_description=False,
+                   eligible_only=False):
+    sql, params = (_JOIN_FULL if include_description else _JOIN), [user_id]
 
     if statuses:
         sql += f" AND uj.status IN ({','.join('?' * len(statuses))})"
         params += list(statuses)
     elif exclude_ignored:
         sql += " AND uj.status != 'ignored'"
+    if eligible_only:
+        sql += " AND (uj.status != 'new' OR COALESCE(json_extract(uj.evaluation_json, '$.eligible'), 1) = 1)"
     if not include_closed:
         # A listing that has come down is noise on a board of things to
         # apply to — 29% of these boards were already HTTP 404 before
@@ -487,6 +535,17 @@ def set_status(conn, user_id, job_id, status):
         "UPDATE user_jobs SET status=?, ignored_reason=NULL, ignored_at=NULL,"
         " updated_at=? WHERE user_id=? AND job_id=?",
         (status, now(), user_id, job_id))
+    tracked = status in ("applied", "no_response", "rejected", "screening", "interview", "offer")
+    exists = conn.execute("SELECT 1 FROM user_jobs WHERE user_id=? AND job_id=?",
+                          (user_id, job_id)).fetchone()
+    if tracked and exists:
+        conn.execute("INSERT INTO outcome_events (user_id,job_id,status,happened_at) VALUES (?,?,?,?)",
+                     (user_id, job_id, status, now()))
+        conn.execute(
+            "INSERT INTO applications (user_id,job_id,outcome,applied_at) VALUES (?,?,?,?) "
+            "ON CONFLICT(user_id,job_id) DO UPDATE SET outcome=excluded.outcome, "
+            "applied_at=COALESCE(applications.applied_at,excluded.applied_at)",
+            (user_id, job_id, status, now()))
     conn.commit()
 
 

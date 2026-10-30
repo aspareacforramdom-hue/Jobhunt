@@ -28,6 +28,7 @@ from core import db, intake, resume
 from web.render import page
 
 SCHEMA_PATH = "config/profile_schema.yml"
+MAX_CSV_BYTES = 2 * 1024 * 1024
 
 
 def load_schema(path=SCHEMA_PATH):
@@ -172,7 +173,7 @@ def register(app, db_path=None):
         return PlainTextResponse("\n".join(lines))
 
     @app.post("/intake/resume")
-    async def upload_resume(request: Request, cv_file: UploadFile = None):
+    def upload_resume(request: Request, cv_file: UploadFile = None):
         """
         Store the CV text against this user's profile.
 
@@ -192,7 +193,7 @@ def register(app, db_path=None):
             return RedirectResponse("/intake?msg=No+file+chosen",
                                     status_code=303)
 
-        raw = await cv_file.read(resume.MAX_BYTES + 1)
+        raw = cv_file.file.read(resume.MAX_BYTES + 1)
         try:
             text, note = resume.extract(raw, cv_file.filename or "")
         except ValueError as e:
@@ -218,8 +219,8 @@ def register(app, db_path=None):
                                 status_code=303)
 
     @app.post("/intake")
-    async def intake_upload(request: Request, csv_file: UploadFile = None,
-                            row_index: int = Form(0)):
+    def intake_upload(request: Request, csv_file: UploadFile = None,
+                      row_index: int = Form(0)):
         if request.app.state.dry:
             return RedirectResponse("/intake?msg=Dry+run+—+no+LLM+calls+made",
                                     status_code=303)
@@ -227,8 +228,18 @@ def register(app, db_path=None):
             return RedirectResponse("/intake?msg=No+file+uploaded",
                                     status_code=303)
 
-        raw = (await csv_file.read()).decode("utf-8-sig", errors="replace")
-        rows = list(csv.DictReader(io.StringIO(raw)))
+        # A synchronous route runs in FastAPI's worker pool. CSV parsing,
+        # SQLite and the blocking model call must not hold the event loop.
+        raw = csv_file.file.read(MAX_CSV_BYTES + 1)
+        if len(raw) > MAX_CSV_BYTES:
+            return RedirectResponse("/intake?msg=CSV+must+be+under+2+MB",
+                                    status_code=303)
+        try:
+            rows = list(csv.DictReader(io.StringIO(
+                raw.decode("utf-8-sig", errors="replace"))))
+        except csv.Error:
+            return RedirectResponse("/intake?msg=Could+not+read+that+CSV",
+                                    status_code=303)
         if not rows:
             return RedirectResponse("/intake?msg=That+CSV+had+no+rows",
                                     status_code=303)
@@ -251,13 +262,15 @@ def register(app, db_path=None):
             existing = db.load_profile(conn, user_id) or {}
             parsed = {"current_role": answers.get("current_role"),
                       "implied_trajectory": None,
-                      "prior_profile_target": existing.get("target")}
+                      "prior_profile_target": existing.get("target"),
+                      "resume_text": (existing.get("resume_text") or "")[:8000]}
 
             profile = intake.compile_profile(parsed, answers, save=False)
 
-            # Keep the search terms a previous calibrate produced; a new
-            # intake does not invalidate what the market calls the role.
-            if existing.get("search_terms"):
+            # Calibration is reusable only while both targets are unchanged.
+            if (existing.get("search_terms")
+                    and existing.get("target") == profile.get("target")
+                    and existing.get("leverage_target") == profile.get("leverage_target")):
                 profile["search_terms"] = existing["search_terms"]
             else:
                 calib.attach_search_terms(profile, None)
